@@ -1,0 +1,328 @@
+import io
+import os
+import re
+import shutil
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from fastapi.responses import StreamingResponse, FileResponse
+from pydantic import BaseModel
+
+from ..auth import get_current_user, require_roles, apply_mask, mask_value, get_client_ip
+from ..config import ROLE_ADMIN, ROLE_MANAGER, ROLE_VIEWER, UPLOAD_DIR
+from ..database import get_db, query_all, query_one, execute, loads, dumps, ensure_column
+from ..services.audit import log_operation
+from ..services.sync import notify_data_changed
+
+router = APIRouter(prefix="/api/ledger", tags=["ledger"])
+
+SENSITIVE_FIELDS = {"id_card", "phone", "visa_no", "guardian_phone", "responsible_phone"}
+
+WRITABLE = [ROLE_ADMIN, ROLE_MANAGER]
+
+
+def _menu(menu_code):
+    m = query_one("SELECT * FROM sys_menu_config WHERE code=? AND is_ledger=1", (menu_code,))
+    if not m:
+        raise HTTPException(status_code=404, detail="台账不存在")
+    return m
+
+
+def _fields(menu_code, include_deleted=False):
+    sql = "SELECT * FROM sys_field_config WHERE menu_code=?"
+    params = [menu_code]
+    if not include_deleted:
+        sql += " AND is_deleted=0"
+    rows = query_all(sql + " ORDER BY sort_order,id", params)
+    out = []
+    for f in rows:
+        out.append({
+            "id": f["id"], "physical_field": f["physical_field"], "display_label": f["display_label"],
+            "data_type": f["data_type"], "form_component": f["form_component"], "is_system": f["is_system"],
+            "show_in_list": f["show_in_list"], "show_in_form": f["show_in_form"],
+            "is_required": f["is_required"], "sort_order": f["sort_order"],
+            "options": loads(f["options_json"], []),
+        })
+    return out
+
+
+@router.get("/{menu_code}/duplicates")
+def check_duplicates(menu_code: str, user: dict = Depends(get_current_user)):
+    """户号/身份证号全局查重：返回重复数据，前端标红预警"""
+    m = _menu(menu_code)
+    fields = _fields(menu_code)
+    checks = [f["physical_field"] for f in fields if f["physical_field"] in ("id_card", "household_no")]
+    result = {}
+    if "id_card" in checks:
+        rows = query_all(
+            f'SELECT "id_card" AS val, COUNT(*) c FROM {m["table_name"]} WHERE "id_card" IS NOT NULL AND "id_card"!=\'\' GROUP BY "id_card" HAVING c>1'
+        )
+        result["id_card"] = [{"value": r["val"], "count": r["c"]} for r in rows]
+    if "household_no" in checks:
+        rows = query_all(
+            f'SELECT "household_no" AS val, COUNT(*) c FROM {m["table_name"]} WHERE "household_no" IS NOT NULL AND "household_no"!=\'\' GROUP BY "household_no" HAVING c>1'
+        )
+        result["household_no"] = [{"value": r["val"], "count": r["c"]} for r in rows]
+    return result
+
+
+@router.get("/{menu_code}/fields")
+def ledger_fields(menu_code: str, user: dict = Depends(get_current_user)):
+    m = _menu(menu_code)
+    fields = _fields(menu_code)
+    list_fields = [f for f in fields if f["show_in_list"]]
+    form_fields = [f for f in fields if f["show_in_form"]]
+    return {"menu": {"code": m["code"], "name": m["name"], "table": m["table_name"]},
+            "list_fields": list_fields, "form_fields": form_fields, "fields": fields}
+
+
+@router.get("/{menu_code}")
+def list_data(menu_code: str, page: int = 1, size: int = 10, keyword: str = "",
+              user: dict = Depends(get_current_user), request: Request = None):
+    m = _menu(menu_code)
+    fields = _fields(menu_code)
+    filters = {}
+    for key, val in request.query_params.items():
+        if key.startswith("filter_"):
+            filters[key[7:]] = val
+
+    where = ["1=1"]
+    params = []
+    for f in fields:
+        pf = f["physical_field"]
+        if pf in filters and filters[pf] != "":
+            where.append(f'"{pf}" = ?')
+            params.append(filters[pf])
+    if keyword:
+        text_fields = [f["physical_field"] for f in fields if f["data_type"] in ("text", "select")]
+        if text_fields:
+            like = " OR ".join([f'"{pf}" LIKE ?' for pf in text_fields])
+            where.append(f"({like})")
+            for _ in text_fields:
+                params.append(f"%{keyword}%")
+
+    base = f'FROM {m["table_name"]} WHERE ' + " AND ".join(where)
+    total = query_one(f"SELECT COUNT(*) c {base}", params)["c"]
+    rows = query_all(
+        f'SELECT * {base} ORDER BY id DESC LIMIT ? OFFSET ?',
+        params + [size, (page - 1) * size],
+    )
+    list_fields = [f for f in fields if f["show_in_list"]]
+    col_names = ["id"] + [f["physical_field"] for f in list_fields]
+    data = [{k: r[k] for k in col_names if k in r} for r in rows]
+    masked = apply_mask(data, [f["physical_field"] for f in list_fields])
+    return {"total": total, "page": page, "size": size, "list": masked,
+            "list_fields": list_fields}
+
+
+@router.get("/{menu_code}/detail/{item_id}")
+def item_detail(menu_code: str, item_id: int, user: dict = Depends(get_current_user)):
+    m = _menu(menu_code)
+    row = query_one(f'SELECT * FROM {m["table_name"]} WHERE id=?', (item_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    fields = _fields(menu_code)
+    data = dict(row)
+    if user["role"] == ROLE_VIEWER:
+        for f in fields:
+            if f["physical_field"] in SENSITIVE_FIELDS:
+                data[f["physical_field"]] = mask_value(f["physical_field"], data.get(f["physical_field"]))
+    return {"item": data, "fields": fields}
+
+
+@router.post("/{menu_code}")
+async def create_item(menu_code: str, item: dict, user: dict = Depends(require_roles(*WRITABLE)), request: Request = None):
+    m = _menu(menu_code)
+    fields = _fields(menu_code)
+    field_map = {f["physical_field"]: f for f in fields}
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cols, ph, vals = [], [], []
+    for f in fields:
+        pf = f["physical_field"]
+        if pf in item and item[pf] is not None:
+            cols.append(f'"{pf}"')
+            ph.append("?")
+            vals.append(item[pf])
+    cols += ["create_time", "update_time"]
+    ph += ["?", "?"]
+    vals += [now, now]
+    with get_db() as db:
+        cur = db.execute(
+            f'INSERT INTO {m["table_name"]} ({", ".join(cols)}) VALUES ({", ".join(ph)})', vals)
+        new_id = cur.lastrowid
+    log_operation(user, "新增数据", f"台账-{m['name']}", f"新增记录#{new_id}", get_client_ip(request))
+    await notify_data_changed(menu_code)
+    return {"message": "新增成功", "id": new_id}
+
+
+@router.put("/{menu_code}/{item_id}")
+async def update_item(menu_code: str, item_id: int, item: dict, user: dict = Depends(require_roles(*WRITABLE)), request: Request = None):
+    m = _menu(menu_code)
+    fields = _fields(menu_code)
+    sets, vals = [], []
+    for f in fields:
+        pf = f["physical_field"]
+        if pf in item:
+            sets.append(f'"{pf}" = ?')
+            vals.append(item[pf])
+    sets.append("update_time = ?")
+    vals.append(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    vals.append(item_id)
+    with get_db() as db:
+        cur = db.execute(f'UPDATE {m["table_name"]} SET {", ".join(sets)} WHERE id=?', vals)
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="记录不存在")
+    log_operation(user, "修改数据", f"台账-{m['name']}", f"修改记录#{item_id}", get_client_ip(request))
+    await notify_data_changed(menu_code)
+    return {"message": "修改成功"}
+
+
+@router.delete("/{menu_code}/{item_id}")
+async def delete_item(menu_code: str, item_id: int, user: dict = Depends(require_roles(*WRITABLE)), request: Request = None):
+    m = _menu(menu_code)
+    with get_db() as db:
+        cur = db.execute(f"DELETE FROM {m['table_name']} WHERE id=?", (item_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="记录不存在")
+    log_operation(user, "删除数据", f"台账-{m['name']}", f"删除记录#{item_id}", get_client_ip(request))
+    await notify_data_changed(menu_code)
+    return {"message": "删除成功"}
+
+
+IMAGE_DIR = os.path.join(UPLOAD_DIR, "images")
+
+
+@router.post("/upload-image")
+async def upload_image(file: UploadFile = File(...), user: dict = Depends(require_roles(*WRITABLE))):
+    os.makedirs(IMAGE_DIR, exist_ok=True)
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"):
+        raise HTTPException(status_code=400, detail="仅支持图片格式")
+    name = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}{ext}"
+    path = os.path.join(IMAGE_DIR, name)
+    with open(path, "wb") as out:
+        shutil.copyfileobj(file.file, out)
+    return {"url": f"/api/files/{name}"}
+
+
+@router.get("/{menu_code}/export")
+def export_excel(menu_code: str, tpl: str = "", user: dict = Depends(get_current_user), request: Request = None):
+    from openpyxl import Workbook
+    m = _menu(menu_code)
+    fields = _fields(menu_code)
+    if tpl:
+        row = query_one("SELECT config_value FROM sys_config WHERE config_key=?", (f"export_tpl_{menu_code}",))
+        tpl_fields = loads(row["config_value"] if row else None, None)
+        if tpl_fields:
+            fields = [f for f in fields if f["physical_field"] in tpl_fields]
+        else:
+            fields = [f for f in fields if f["show_in_list"]]
+    else:
+        fields = [f for f in fields if f["show_in_list"]]
+
+    rows = query_all(f'SELECT * FROM {m["table_name"]} ORDER BY id')
+    wb = Workbook()
+    ws = wb.active
+    ws.title = m["name"]
+    headers = [f["display_label"] for f in fields]
+    ws.append(headers)
+    for r in rows:
+        ws.append([r.get(f["physical_field"], "") for f in fields])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    log_operation(user, "导出数据", f"台账-{m['name']}", f"导出Excel {len(rows)}条", get_client_ip(request))
+    from urllib.parse import quote
+    fname = f"{m['name']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx"
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"})
+
+
+@router.post("/{menu_code}/import")
+async def import_excel(menu_code: str, file: UploadFile = File(...),
+                       user: dict = Depends(require_roles(*WRITABLE)), request: Request = None):
+    from openpyxl import load_workbook
+    m = _menu(menu_code)
+    fields = _fields(menu_code)
+    label_map = {f["display_label"]: f["physical_field"] for f in fields}
+    field_map = {f["physical_field"]: f for f in fields}
+    try:
+        content = file.file.read()
+        wb = load_workbook(io.BytesIO(content))
+        ws = wb.active
+    except Exception:
+        raise HTTPException(status_code=400, detail="Excel 文件解析失败，请使用标准 .xlsx 文件")
+    rows = list(ws.iter_rows(values_only=True))
+    if len(rows) < 2:
+        raise HTTPException(status_code=400, detail="文件中没有数据行")
+    headers = [str(h).strip() if h is not None else "" for h in rows[0]]
+    col_map = []
+    for i, h in enumerate(headers):
+        if h in label_map:
+            col_map.append((i, label_map[h]))
+    if not col_map:
+        raise HTTPException(status_code=400, detail="表头无法匹配台账字段，请检查列名")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ok, dup = 0, 0
+    with get_db() as db:
+        for row in rows[1:]:
+            if all(c is None for c in row):
+                continue
+            rec = {}
+            for i, pf in col_map:
+                rec[pf] = row[i]
+            cols, ph, vals = [], [], []
+            for pf, v in rec.items():
+                cols.append(f'"{pf}"')
+                ph.append("?")
+                vals.append(v)
+            cols += ["create_time", "update_time"]
+            ph += ["?", "?"]
+            vals += [now, now]
+            # 身份证查重
+            if "id_card" in rec and rec["id_card"]:
+                exist = db.execute(f'SELECT id FROM {m["table_name"]} WHERE "id_card"=?', (rec["id_card"],)).fetchone()
+                if exist:
+                    dup += 1
+                    continue
+            try:
+                db.execute(f'INSERT INTO {m["table_name"]} ({", ".join(cols)}) VALUES ({", ".join(ph)})', vals)
+                ok += 1
+            except Exception:
+                continue
+    log_operation(user, "导入数据", f"台账-{m['name']}", f"Excel导入 成功{ok}条 重复{dup}条", get_client_ip(request))
+    await notify_data_changed(menu_code)
+    return {"message": f"导入完成：成功 {ok} 条，身份证重复跳过 {dup} 条"}
+
+
+class TplBody(BaseModel):
+    fields: list
+
+
+@router.get("/{menu_code}/templates")
+def list_templates(menu_code: str, user: dict = Depends(get_current_user)):
+    row = query_one("SELECT config_value FROM sys_config WHERE config_key=?", (f"export_tpl_{menu_code}",))
+    if not row or not row["config_value"]:
+        return {"templates": []}
+    return {"templates": loads(row["config_value"], [])}
+
+
+@router.post("/{menu_code}/templates")
+async def save_template(menu_code: str, body: TplBody, user: dict = Depends(require_roles(*WRITABLE)), request: Request = None):
+    fields = [f["physical_field"] for f in _fields(menu_code) if f["physical_field"] in body.fields]
+    key = f"export_tpl_{menu_code}"
+    with get_db() as db:
+        db.execute("INSERT INTO sys_config(config_key,config_value,remark) VALUES(?,?,?) ON CONFLICT(config_key) DO UPDATE SET config_value=?",
+                   (key, dumps(fields), "导出模板", dumps(fields)))
+    log_operation(user, "保存导出模板", f"台账-{menu_code}", "保存字段导出模板", get_client_ip(request))
+    return {"message": "模板已保存"}
+
+
+@router.get("/{menu_code}/print/{item_id}")
+def print_item(menu_code: str, item_id: int, user: dict = Depends(get_current_user)):
+    m = _menu(menu_code)
+    row = query_one(f'SELECT * FROM {m["table_name"]} WHERE id=?', (item_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    fields = [f for f in _fields(menu_code) if f["show_in_form"]]
+    return {"menu_name": m["name"], "fields": fields, "item": dict(row)}
