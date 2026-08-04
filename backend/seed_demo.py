@@ -107,10 +107,17 @@ print("残疾人 14 条")
 # 低保
 for i in range(12):
     birth = datetime.now() - timedelta(days=random.randint(25*365, 80*365))
-    cur.execute("""INSERT INTO t_low_income(name,id_card,phone,household_no,monthly_amount,start_date,end_date,status,village_group,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-        (gen_name(), gen_id_card(birth), gen_phone(), f"H{random.randint(1,9999):04d}",
-         random.randint(300, 1200), dts(-random.randint(1, 3)*365), dts(random.randint(30, 730)),
-         random.choice(["在保","在保","在保","退出"]), random.choice(GROUPS), dt(0), dt(0)))
+    cur.execute("""INSERT INTO t_low_income(name,gender,id_card,phone,household_no,householder,age,is_disabled,disability_type,disability_level,low_income_type,start_date,monthly_amount,relief_type,bank,social_card,adjust_record,end_date,status,village_group,remark,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (gen_name(), random.choice(["男","女"]), gen_id_card(birth), gen_phone(), f"H{random.randint(1,9999):04d}",
+         gen_name(), (datetime.now()-birth).days//365,
+         random.choice(["是","否"]), random.choice(["视力","肢体","无"]), random.choice(["一级","二级","三级","四级"]),
+         random.choice(["城市低保","农村低保"]), dts(-random.randint(1, 3)*365),
+         random.randint(300, 1200), random.choice(["临时救助","医疗救助","教育救助","其他"]),
+         random.choice(["农村信用社","农业银行","建设银行","工商银行"]),
+         f"62{random.randint(1000000000000000, 9999999999999999)}",
+         random.choice(["", "2026年1月保障标准上调", "2025年7月新增保障"]),
+         dts(random.randint(30, 730)), random.choice(["在保","在保","在保","退出"]),
+         random.choice(GROUPS), random.choice(["", "重点保障对象"]), dt(0), dt(0)))
 print("低保 12 条")
 
 # 三费收缴 - 2025/2026 年度
