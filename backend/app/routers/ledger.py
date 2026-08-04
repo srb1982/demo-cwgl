@@ -176,6 +176,20 @@ def item_detail(menu_code: str, item_id: int, user: dict = Depends(get_current_u
     return {"item": data, "fields": fields}
 
 
+@router.post("/upload-image")
+async def upload_image(file: UploadFile = File(...), user: dict = Depends(require_roles(*WRITABLE))):
+    os.makedirs(IMAGE_DIR, exist_ok=True)
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
+                   ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt"):
+        raise HTTPException(status_code=400, detail="仅支持图片或常用文档格式")
+    name = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}{ext}"
+    path = os.path.join(IMAGE_DIR, name)
+    with open(path, "wb") as out:
+        shutil.copyfileobj(file.file, out)
+    return {"url": f"/api/files/{name}"}
+
+
 @router.post("/{menu_code}")
 async def create_item(menu_code: str, item: dict, user: dict = Depends(require_roles(*WRITABLE)), request: Request = None):
     m = _menu(menu_code)
@@ -238,19 +252,6 @@ async def delete_item(menu_code: str, item_id: int, user: dict = Depends(require
 
 
 IMAGE_DIR = os.path.join(UPLOAD_DIR, "images")
-
-
-@router.post("/upload-image")
-async def upload_image(file: UploadFile = File(...), user: dict = Depends(require_roles(*WRITABLE))):
-    os.makedirs(IMAGE_DIR, exist_ok=True)
-    ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"):
-        raise HTTPException(status_code=400, detail="仅支持图片格式")
-    name = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}{ext}"
-    path = os.path.join(IMAGE_DIR, name)
-    with open(path, "wb") as out:
-        shutil.copyfileobj(file.file, out)
-    return {"url": f"/api/files/{name}"}
 
 
 @router.get("/{menu_code}/export")
