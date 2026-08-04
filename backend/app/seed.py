@@ -79,15 +79,27 @@ LEDGERS = [
     {
         "code": "disabled", "name": "残疾人信息台账", "table": "t_disabled", "group": "base",
         "fields": [
+            F("village_group", "村民组", "text", False, True, True),
+            F("household_no", "户号", "text", False, True, True),
+            F("householder", "户主姓名", "text", False, True, True),
             F("name", "姓名", "text", True, True, True),
-            F("id_card", "身份证号", "text", True, True, True),
-            F("phone", "联系电话", "text", False, True, True),
-            F("disability_type", "残疾类别", "select", True, True, True, ["视力", "听力", "言语", "肢体", "智力", "精神", "多重"]),
+            F("gender", "性别", "select", True, True, True, ["男", "女"]),
+            F("id_card", "身份证号码", "text", True, True, True),
+            F("age", "年龄", "number", False, True, True),
+            F("disability_type", "残疾类型", "select", True, True, True, ["视力", "听力", "言语", "肢体", "智力", "精神", "多重"]),
             F("disability_level", "残疾等级", "select", True, True, True, ["一级", "二级", "三级", "四级"]),
-            F("certificate_no", "残疾证号", "text", False, True, True),
-            F("expire_date", "证件到期日", "date", False, True, True),
-            F("cert_status", "证件状态", "select", False, True, True, ["正常", "即将到期", "已到期", "换证中"]),
-        ] + COMMON,
+            F("disability_photo", "残疾证照片", "image", False, True, True),
+            F("phone", "联系方式", "text", False, True, True),
+            F("low_income", "是否低保", "select", False, True, True, ["是", "否"]),
+            F("certificate_date", "办证日期", "date", False, True, True),
+            F("renew_date", "换证日期", "date", False, True, True),
+            F("guardian", "监护人", "text", False, True, True),
+            F("guardian_phone", "监护人电话", "text", False, True, True),
+            F("remark", "备注", "text", False, True, True),
+            F("certificate_no", "残疾证号", "text", False, False, False),
+            F("expire_date", "证件到期日", "date", False, False, True),
+            F("cert_status", "证件状态", "select", False, False, True, ["正常", "即将到期", "已到期", "换证中"]),
+        ],
     },
     {
         "code": "low_income", "name": "低保信息台账", "table": "t_low_income", "group": "base",
@@ -509,12 +521,12 @@ def init_db():
                      1, 1 if fld["show_list"] else 0, 1 if fld["show_form"] else 0, 1 if fld["required"] else 0,
                      idx + 1, 0, dumps(fld["options"]) if fld["options"] else None, now, now),
                 )
-            # 党员台账补：创建时间列（公共列，列表展示）
-            if lg["code"] == "party_member":
+            # 创建时间列：党员/残疾人台账需求列表展示（公共列，前端动态渲染）
+            if lg["code"] in ("party_member", "disabled"):
                 cur.execute(
                     "INSERT INTO sys_field_config(menu_code,physical_field,display_label,data_type,form_component,is_system,show_in_list,show_in_form,is_required,sort_order,is_deleted,options_json,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (lg["code"], "create_time", "创建时间", "text", "input", 1, 1, 0, 0,
-                     15, 0, None, now, now),
+                     15 if lg["code"] == "party_member" else 18, 0, None, now, now),
                 )
 
     # ---------------- 预置字段库 ----------------
