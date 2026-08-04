@@ -70,11 +70,19 @@ print("村民信息 120 条")
 # 党员
 for i in range(18):
     birth = datetime.now() - timedelta(days=random.randint(28*365, 70*365))
-    cur.execute("""INSERT INTO t_party_member(name,gender,id_card,phone,party_branch,join_date,positive_date,fee_status,village_group,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+    join_d = -random.randint(1, 25)*365
+    positive_d = min(join_d + random.randint(0, 365), -1)
+    cur.execute("""INSERT INTO t_party_member(name,gender,id_card,phone,party_branch,join_date,positive_date,fee_status,village_group,household_no,householder,age,party_age,work_address,fee_amount,remark,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (gen_name(), random.choice(["男","女"]), gen_id_card(birth), gen_phone(),
          random.choice(["第一党支部","第二党支部","第三党支部"]),
-         dts(-random.randint(1, 25)*365), dts(-random.randint(1, 24)*365),
-         random.choice(["正常","正常","正常","欠缴"]), random.choice(GROUPS), dt(0), dt(0)))
+         dts(join_d), dts(positive_d),
+         random.choice(["正常","正常","正常","欠缴"]), random.choice(GROUPS),
+         f"{random.choice(GROUPS)}{random.randint(1,30)}号", gen_name(),
+         (datetime.now()-birth).days//365,
+         max(0, (datetime.now() - (datetime.now() + timedelta(days=join_d))).days//365),
+         random.choice(["", "", "县外务工", "自主创业"]),
+         random.choice([120, 240, 300, 360, 480, 600]),
+         random.choice(["", "优秀党员", "老党员"]), dt(0), dt(0)))
 print("党员 18 条")
 
 # 残疾人

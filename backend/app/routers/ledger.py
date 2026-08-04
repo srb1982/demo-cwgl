@@ -41,12 +41,29 @@ def _calc_age_from_idcard(id_card):
         return None
 
 
+def _calc_party_age(join_date):
+    """按入党时间计算党龄（年，距今天数不足一年按 0）"""
+    if not join_date:
+        return None
+    try:
+        d = datetime.strptime(str(join_date)[:10], "%Y-%m-%d").date()
+        today = date.today()
+        years = today.year - d.year - ((today.month, today.day) < (d.month, d.day))
+        return years if years >= 0 else None
+    except Exception:
+        return None
+
+
 def _auto_fill(item: dict, field_map: dict) -> dict:
-    """通用自动填充：台账含 age 字段且身份证号码可用时，自动计算年龄（增补优化）"""
+    """通用自动填充：台账含 age/party_age 字段且可推导时自动计算（增补优化）"""
     if "age" in field_map and item.get("id_card") and not item.get("age"):
         age = _calc_age_from_idcard(item.get("id_card"))
         if age is not None:
             item["age"] = age
+    if "party_age" in field_map and item.get("join_date") and not item.get("party_age"):
+        party_age = _calc_party_age(item.get("join_date"))
+        if party_age is not None:
+            item["party_age"] = party_age
     return item
 
 
