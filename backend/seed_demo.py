@@ -123,13 +123,21 @@ print("低保 12 条")
 # 三费收缴 - 2025/2026 年度
 for year in ["2025", "2026"]:
     for i in range(90):
-        cur.execute("""INSERT INTO t_fee_collect(name,id_card,phone,village_group,fee_year,medical_status,pension_status,supplement_status,amount,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-            (gen_name(), gen_id_card(datetime.now() - timedelta(days=random.randint(18*365, 80*365))), gen_phone(),
+        birth = datetime.now() - timedelta(days=random.randint(18*365, 80*365))
+        cur.execute("""INSERT INTO t_fee_collect(name,id_card,phone,village_group,fee_year,medical_status,pension_status,supplement_status,amount,household_no,family_count,householder,relation,age,identity_mark,pay_method,pay_time,operator,remark,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (gen_name(), gen_id_card(birth), gen_phone(),
              random.choice(GROUPS), year,
              random.choices(["已缴","未缴","减免"], weights=[7,2,1])[0],
              random.choices(["已缴","未缴","减免"], weights=[6,3,1])[0],
              random.choices(["已缴","未缴","减免"], weights=[5,4,1])[0],
-             random.randint(200, 900), dt(0), dt(0)))
+             random.randint(200, 900),
+             f"{random.choice(GROUPS)}{random.randint(1,30)}号", random.randint(1, 5),
+             gen_name(), random.choice(["本人","配偶","子女","父母"]),
+             (datetime.now()-birth).days//365,
+             random.choice(["群众","群众","党员","低保","五保"]),
+             random.choice(["微信","微信","支付宝","现金","村集体代缴"]),
+             dts(-random.randint(0, 300)), random.choice(["张会计","李会计","王会计"]),
+             random.choice(["", "补缴上年度"]), dt(0), dt(0)))
 print("三费收缴 180 条")
 
 # 留守儿童

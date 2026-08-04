@@ -92,7 +92,13 @@ export default function LedgerPage() {
   const renderCell = (field: any, record: any) => {
     const val = record[field.physical_field]
     if (field.data_type === 'image') {
-      return val ? <Image src={val} width={46} height={34} style={{ objectFit: 'cover', borderRadius: 4 }} /> : null
+      if (!val) return null
+      const imgRe = /\.(jpe?g|png|gif|webp|bmp)(\?|$)/i
+      if (imgRe.test(val)) {
+        return <Image src={val} width={46} height={34} style={{ objectFit: 'cover', borderRadius: 4 }} />
+      }
+      const fname = decodeURIComponent(val.split('/').pop() || '附件')
+      return <a href={val} target="_blank" rel="noreferrer" title={fname}>{fname.slice(0, 12)}</a>
     }
     if (field.data_type === 'select') {
       return <Tag color={typeTagColor.select}>{val || '-'}</Tag>
@@ -360,7 +366,7 @@ export default function LedgerPage() {
                 label={f.display_label}
                 rules={[{ required: !!f.is_required, message: `请填写${f.display_label}` }]}
                 style={{ gridColumn: f.data_type === 'text' ? 'span 1' : undefined }}
-                extra={f.data_type === 'image' ? '支持 JPG/PNG 图片' : undefined}
+                extra={f.data_type === 'image' ? '支持上传图片或常用文档（JPG/PNG/PDF/Word/Excel）' : undefined}
               >
                 {renderFormControl(f)}
               </Form.Item>
