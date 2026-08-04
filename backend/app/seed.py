@@ -104,15 +104,28 @@ LEDGERS = [
     {
         "code": "low_income", "name": "低保信息台账", "table": "t_low_income", "group": "base",
         "fields": [
-            F("name", "姓名", "text", True, True, True),
-            F("id_card", "身份证号", "text", True, True, True),
-            F("phone", "联系电话", "text", False, True, True),
+            F("village_group", "村民组", "text", False, True, True),
             F("household_no", "户号", "text", False, True, True),
-            F("monthly_amount", "月保障金额", "number", True, True, True),
-            F("start_date", "享受起始日期", "date", False, True, True),
-            F("end_date", "享受结束日期", "date", False, True, True),
-            F("status", "保障状态", "select", False, True, True, ["在保", "退出", "已停发"]),
-        ] + COMMON,
+            F("householder", "户主姓名", "text", False, True, True),
+            F("name", "姓名", "text", True, True, True),
+            F("gender", "性别", "select", False, True, True, ["男", "女"]),
+            F("id_card", "身份证号码", "text", True, True, True),
+            F("age", "年龄", "number", False, True, True),
+            F("is_disabled", "是否残疾", "select", False, True, True, ["是", "否"]),
+            F("disability_type", "残疾类型", "select", False, True, True, ["视力", "听力", "言语", "肢体", "智力", "精神", "多重"]),
+            F("disability_level", "残疾等级", "select", False, True, True, ["一级", "二级", "三级", "四级"]),
+            F("low_income_type", "低保类型", "select", False, True, True, ["城市低保", "农村低保"]),
+            F("phone", "联系方式", "text", False, True, True),
+            F("start_date", "开始时间", "date", False, True, True),
+            F("monthly_amount", "保障标准（元/月）", "number", True, True, True),
+            F("relief_type", "救助类型", "select", False, True, True, ["临时救助", "医疗救助", "教育救助", "住房救助", "就业救助", "其他"]),
+            F("bank", "开户行", "text", False, True, True),
+            F("social_card", "社保卡号", "text", False, True, True),
+            F("adjust_record", "动态调整记录", "text", False, True, True),
+            F("remark", "备注", "text", False, True, True),
+            F("end_date", "享受结束日期", "date", False, False, True),
+            F("status", "保障状态", "select", False, False, True, ["在保", "退出", "已停发"]),
+        ],
     },
     {
         "code": "fee_collect", "name": "三费收缴台账", "table": "t_fee_collect", "group": "base",
@@ -521,12 +534,13 @@ def init_db():
                      1, 1 if fld["show_list"] else 0, 1 if fld["show_form"] else 0, 1 if fld["required"] else 0,
                      idx + 1, 0, dumps(fld["options"]) if fld["options"] else None, now, now),
                 )
-            # 创建时间列：党员/残疾人台账需求列表展示（公共列，前端动态渲染）
-            if lg["code"] in ("party_member", "disabled"):
+            # 创建时间列：需求列表展示的台账（公共列，前端动态渲染）
+            if lg["code"] in ("party_member", "disabled", "low_income"):
+                sort = {"party_member": 15, "disabled": 18, "low_income": 20}[lg["code"]]
                 cur.execute(
                     "INSERT INTO sys_field_config(menu_code,physical_field,display_label,data_type,form_component,is_system,show_in_list,show_in_form,is_required,sort_order,is_deleted,options_json,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (lg["code"], "create_time", "创建时间", "text", "input", 1, 1, 0, 0,
-                     15 if lg["code"] == "party_member" else 18, 0, None, now, now),
+                     sort, 0, None, now, now),
                 )
 
     # ---------------- 预置字段库 ----------------
