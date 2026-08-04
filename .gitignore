@@ -8,6 +8,7 @@ backend/data/*.db-wal
 backend/data/*.db-shm
 backend/data/uploads/
 backend/data/backups/
+backend/*.zip
 backend/static/
 .venv/
 .vscode/

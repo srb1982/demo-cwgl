@@ -58,15 +58,23 @@ LEDGERS = [
     {
         "code": "party_member", "name": "党员信息台账", "table": "t_party_member", "group": "base",
         "fields": [
+            F("village_group", "村民组", "text", False, True, True),
+            F("household_no", "户号", "text", False, True, True),
+            F("householder", "户主姓名", "text", False, True, True),
             F("name", "姓名", "text", True, True, True),
             F("gender", "性别", "select", True, True, True, ["男", "女"]),
-            F("id_card", "身份证号", "text", True, True, True),
-            F("phone", "联系电话", "text", False, True, True),
-            F("party_branch", "所在支部", "text", False, True, True),
-            F("join_date", "入党日期", "date", True, True, True),
-            F("positive_date", "转正日期", "date", False, True, True),
-            F("fee_status", "党费收缴", "select", False, True, True, ["正常", "欠缴", "免缴"]),
-        ] + COMMON,
+            F("id_card", "身份证号码", "text", True, True, True),
+            F("age", "年龄", "number", False, True, True),
+            F("join_date", "入党时间", "date", True, True, True),
+            F("positive_date", "转正时间", "date", False, True, True),
+            F("party_age", "党龄", "number", False, True, True),
+            F("phone", "联系方式", "text", False, True, True),
+            F("work_address", "务工地址", "text", False, True, True),
+            F("fee_amount", "党费（元/年）", "number", False, True, True),
+            F("remark", "备注", "text", False, True, True),
+            F("fee_status", "党费收缴", "select", False, False, True, ["正常", "欠缴", "免缴"]),
+            F("party_branch", "所在支部", "text", False, False, False),
+        ],
     },
     {
         "code": "disabled", "name": "残疾人信息台账", "table": "t_disabled", "group": "base",
@@ -500,6 +508,13 @@ def init_db():
                      {"text": "input", "number": "number", "date": "date", "image": "upload", "select": "select"}[fld["type"]],
                      1, 1 if fld["show_list"] else 0, 1 if fld["show_form"] else 0, 1 if fld["required"] else 0,
                      idx + 1, 0, dumps(fld["options"]) if fld["options"] else None, now, now),
+                )
+            # 党员台账补：创建时间列（公共列，列表展示）
+            if lg["code"] == "party_member":
+                cur.execute(
+                    "INSERT INTO sys_field_config(menu_code,physical_field,display_label,data_type,form_component,is_system,show_in_list,show_in_form,is_required,sort_order,is_deleted,options_json,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (lg["code"], "create_time", "创建时间", "text", "input", 1, 1, 0, 0,
+                     15, 0, None, now, now),
                 )
 
     # ---------------- 预置字段库 ----------------
