@@ -2,7 +2,7 @@ import io
 import os
 import re
 import shutil
-from datetime import datetime
+from datetime import datetime, date
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, FileResponse
@@ -19,6 +19,35 @@ router = APIRouter(prefix="/api/ledger", tags=["ledger"])
 SENSITIVE_FIELDS = {"id_card", "phone", "visa_no", "guardian_phone", "responsible_phone"}
 
 WRITABLE = [ROLE_ADMIN, ROLE_MANAGER]
+
+
+def _calc_age_from_idcard(id_card):
+    """按身份证号码计算年龄（支持18位/15位）"""
+    if not id_card:
+        return None
+    s = str(id_card).strip()
+    try:
+        if len(s) == 18:
+            b = s[6:14]
+        elif len(s) == 15:
+            b = "19" + s[6:12]
+        else:
+            return None
+        birth = datetime.strptime(b, "%Y%m%d").date()
+        today = date.today()
+        age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+        return age if 0 <= age <= 150 else None
+    except Exception:
+        return None
+
+
+def _auto_fill(item: dict, field_map: dict) -> dict:
+    """通用自动填充：台账含 age 字段且身份证号码可用时，自动计算年龄（增补优化）"""
+    if "age" in field_map and item.get("id_card") and not item.get("age"):
+        age = _calc_age_from_idcard(item.get("id_card"))
+        if age is not None:
+            item["age"] = age
+    return item
 
 
 def _menu(menu_code):
@@ -135,6 +164,7 @@ async def create_item(menu_code: str, item: dict, user: dict = Depends(require_r
     m = _menu(menu_code)
     fields = _fields(menu_code)
     field_map = {f["physical_field"]: f for f in fields}
+    item = _auto_fill(item, field_map)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cols, ph, vals = [], [], []
     for f in fields:
@@ -159,6 +189,7 @@ async def create_item(menu_code: str, item: dict, user: dict = Depends(require_r
 async def update_item(menu_code: str, item_id: int, item: dict, user: dict = Depends(require_roles(*WRITABLE)), request: Request = None):
     m = _menu(menu_code)
     fields = _fields(menu_code)
+    item = _auto_fill(item, {f["physical_field"]: f for f in fields})
     sets, vals = [], []
     for f in fields:
         pf = f["physical_field"]

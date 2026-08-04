@@ -51,11 +51,20 @@ if "--reset" in sys.argv:
 # 村民信息
 for i in range(120):
     birth = datetime.now() - timedelta(days=random.randint(22*365, 85*365))
-    cur.execute("""INSERT INTO t_villager_info(name,gender,id_card,phone,household_no,birth_date,household_type,address,village_group,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-        (gen_name(), random.choice(["男","女"]), gen_id_card(birth), gen_phone(), f"H{i+1:04d}",
-         birth.strftime("%Y-%m-%d"), random.choice(["农业户口","非农业户口"]),
-         f"{random.choice(GROUPS)}{random.randint(1,30)}号", random.choice(GROUPS),
-         dt(0), dt(0)))
+    age = (datetime.now().date() - birth.date()).days // 365
+    cur.execute("""INSERT INTO t_villager_info(village_group,household_no,population,householder,name,relation,gender,id_card,age,phone,address,work_type,work_address,key_mark,education,ethnic,status,remark,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (random.choice(GROUPS), f"H{i+1:04d}", random.randint(1, 6),
+         random.choice(["是", "否"]), gen_name(),
+         random.choice(["本人", "配偶", "子女", "父母", "祖孙", "其他"]),
+         random.choice(["男", "女"]), gen_id_card(birth), age, gen_phone(),
+         f"{random.choice(GROUPS)}{random.randint(1,30)}号",
+         random.choice(["在家务农", "本地务工", "县外务工", "自主创业", "无"]),
+         f"{random.choice(['县内', '县外', '省外'])}{random.randint(1,50)}号",
+         random.choice(["无", "低保", "残疾", "五保", "建档立卡", "优抚对象", "其他"]),
+         random.choice(["文盲", "小学", "初中", "高中", "中专", "大专", "本科及以上"]),
+         random.choice(["汉族", "壮族", "回族", "满族", "苗族", "维吾尔族", "彝族", "土家族", "蒙古族", "其他"]),
+         random.choice(["正常", "外出", "迁出", "死亡", "已注销"]),
+         random.choice(["", "外出务工", "重点关注户"]), dt(0), dt(0)))
 print("村民信息 120 条")
 
 # 党员

@@ -97,6 +97,9 @@ export default function LedgerPage() {
     if (field.data_type === 'select') {
       return <Tag color={typeTagColor.select}>{val || '-'}</Tag>
     }
+    if (field.data_type === 'number' && typeof val === 'number') {
+      return Number.isInteger(val) ? String(val) : val
+    }
     const dup = field.physical_field === 'id_card' && dupResult?.id_card?.some((d: any) => d.value === val)
     const dupH = field.physical_field === 'household_no' && dupResult?.household_no?.some((d: any) => d.value === val)
     if (dup || dupH) {
