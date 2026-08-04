@@ -90,11 +90,18 @@ for i in range(14):
     birth = datetime.now() - timedelta(days=random.randint(20*365, 75*365))
     expire = random.randint(-100, 200)
     status = "已到期" if expire < 0 else ("即将到期" if expire < 90 else "正常")
-    cur.execute("""INSERT INTO t_disabled(name,id_card,phone,disability_type,disability_level,certificate_no,expire_date,cert_status,village_group,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-        (gen_name(), gen_id_card(birth), gen_phone(),
+    cert_date = dts(-random.randint(1, 8)*365)
+    cur.execute("""INSERT INTO t_disabled(name,gender,id_card,phone,disability_type,disability_level,certificate_no,expire_date,cert_status,village_group,household_no,householder,age,low_income,certificate_date,renew_date,guardian,guardian_phone,remark,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (gen_name(), random.choice(["男","女"]), gen_id_card(birth), gen_phone(),
          random.choice(["视力","听力","言语","肢体","智力","精神","多重"]),
          random.choice(["一级","二级","三级","四级"]), f"D{random.randint(100000,999999)}",
-         dts(expire), status, random.choice(GROUPS), dt(0), dt(0)))
+         dts(expire), status, random.choice(GROUPS),
+         f"{random.choice(GROUPS)}{random.randint(1,30)}号", gen_name(),
+         (datetime.now()-birth).days//365,
+         random.choice(["是","否"]), cert_date,
+         dts(-random.randint(1, 4)*365),
+         gen_name(), gen_phone(),
+         random.choice(["", "重度残疾", "需定期随访"]), dt(0), dt(0)))
 print("残疾人 14 条")
 
 # 低保
