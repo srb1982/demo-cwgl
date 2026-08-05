@@ -38,6 +38,8 @@ CATEGORY_KEYWORDS = {
     "village_public": ["公示", "公开", "公告"],
     "public_job": ["公益岗位", "公益岗"],
     "custom_rural": ["红白事", "移风易俗", "简办"],
+    "custom_red": ["红事", "婚嫁", "喜宴"],
+    "custom_white": ["白事", "丧事", "出殡"],
     "rural_industry": ["产业", "合作社", "集体经济项目"],
     "project": ["工程", "项目", "施工", "标段"],
     "visit_record": ["走访", "帮扶", "慰问"],
@@ -50,6 +52,7 @@ CATEGORY_NAMES = {
     "oversea": "境外人员", "three_capital": "三资管理", "homestead": "宅基地建房",
     "drowning_prevent": "防溺水", "petition": "信访矛盾", "village_public": "村务公开",
     "public_job": "公益岗位", "custom_rural": "移风易俗", "rural_industry": "乡村产业",
+    "custom_red": "红事统计表", "custom_white": "白事统计表",
     "project": "工程项目", "visit_record": "走访帮扶",
 }
 
