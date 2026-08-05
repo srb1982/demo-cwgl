@@ -127,9 +127,9 @@ for year in ["2025", "2026"]:
         cur.execute("""INSERT INTO t_fee_collect(name,id_card,phone,village_group,fee_year,medical_status,pension_status,supplement_status,amount,household_no,family_count,householder,relation,age,identity_mark,pay_method,pay_time,operator,remark,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (gen_name(), gen_id_card(birth), gen_phone(),
              random.choice(GROUPS), year,
-             random.choices(["已缴","未缴","减免"], weights=[7,2,1])[0],
-             random.choices(["已缴","未缴","减免"], weights=[6,3,1])[0],
-             random.choices(["已缴","未缴","减免"], weights=[5,4,1])[0],
+             random.choices([380, 0, 0], weights=[7, 2, 1])[0],
+             random.choices([300, 0, 0], weights=[6, 3, 1])[0],
+             random.choices([40, 0, 0], weights=[5, 4, 1])[0],
              random.randint(200, 900),
              f"{random.choice(GROUPS)}{random.randint(1,30)}号", random.randint(1, 5),
              gen_name(), random.choice(["本人","配偶","子女","父母"]),
@@ -275,11 +275,19 @@ print("移风易俗 6 条")
 
 # 水库移民
 for i in range(5):
-    cur.execute("""INSERT INTO t_reservoir_migrant(name,id_card,phone,migrant_no,subsidy_amount,migrate_date,address,village_group,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-        (gen_name(), gen_id_card(datetime.now() - timedelta(days=random.randint(30*365, 70*365))),
-         gen_phone(), f"Y{random.randint(100000,999999)}", random.randint(2000, 20000),
-         dts(-random.randint(100, 2000)*10), f"{random.choice(GROUPS)}{random.randint(1,30)}号",
-         random.choice(GROUPS), dt(0), dt(0)))
+    birth = datetime.now() - timedelta(days=random.randint(30*365, 70*365))
+    is_dead = random.choices(["正常", "死亡", "公职人员"], weights=[8, 1, 1])[0]
+    cur.execute("""INSERT INTO t_reservoir_migrant(village_group,household_no,family_count,name,gender,ethnic,relation,id_card,phone,bank_name,account_name,card_no,is_deceased,deceased_time,remark,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (random.choice(GROUPS), f"H{random.randint(1,30):04d}", random.randint(1, 5),
+         gen_name(), random.choice(["男", "女"]), random.choice(["汉族", "壮族", "其他"]),
+         random.choice(["本人", "配偶", "子女", "父母"]),
+         gen_id_card(birth), gen_phone(),
+         random.choice(["农商行", "农业银行", "邮政储蓄", "建设银行"]),
+         "存折户主", f"IC{random.randint(100000000, 999999999)}",
+         is_dead,
+         dts(-random.randint(30, 300)) if is_dead != "正常" else None,
+         random.choice(["", "原迁安置"], ),
+         dt(0), dt(0)))
 print("水库移民 5 条")
 
 # 搬迁
