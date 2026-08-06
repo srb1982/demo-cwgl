@@ -25,6 +25,16 @@ def _pick_year(year: str):
     return rows[0]["fee_year"] if rows else ""
 
 
+def _is_paid(v):
+    """三费字段为金额：>0 视为已缴，0/空视为未缴"""
+    if v is None:
+        return False
+    try:
+        return float(v) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _color(rate):
     if rate >= 80:
         return "green"
@@ -56,11 +66,8 @@ def fee_summary(year: str = "", user: dict = Depends(get_current_user)):
     for r in rows:
         amount_total += (r["amount"] or 0) or 0
         for t, _ in FEE_TYPES:
-            s = r[t]
-            if s == "已缴":
+            if _is_paid(r[t]):
                 per_type[t]["paid"] += 1
-            elif s == "减免":
-                per_type[t]["reduced"] += 1
             else:
                 per_type[t]["unpaid"] += 1
 
@@ -75,11 +82,8 @@ def fee_summary(year: str = "", user: dict = Depends(get_current_user)):
         g = groups[r["village_group"] or "未分组"]
         g["total"] += 1
         for t, _ in FEE_TYPES:
-            s = r[t]
-            if s == "已缴":
+            if _is_paid(r[t]):
                 g["paid"] += 1
-            elif s == "减免":
-                g["reduced"] += 1
             else:
                 g["unpaid"] += 1
     group_list = []
@@ -116,7 +120,7 @@ def fee_unpaid(year: str = "", group: str = "", user: dict = Depends(get_current
     rows = query_all(f"SELECT * FROM t_fee_collect WHERE {' AND '.join(where)}", params)
     result = []
     for r in rows:
-        missing = [name for t, name in FEE_TYPES if r[t] in (None, "", "未缴")]
+        missing = [name for t, name in FEE_TYPES if not _is_paid(r[t])]
         if missing:
             result.append({"id": r["id"], "name": r["name"], "village_group": r["village_group"],
                            "phone": r["phone"], "missing": "、".join(missing), "amount": r["amount"]})
