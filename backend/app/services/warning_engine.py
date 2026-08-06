@@ -13,6 +13,7 @@ LEDGERS = {
     "public_job": ("公益性岗位台账", "t_public_job", "person_name"),
     "oversea": ("境外人员台账", "t_oversea", "name"),
     "village_move": ("搬迁台账", "t_village_move", "name"),
+    "fee_collect": ("三费收缴台账", "t_fee_collect", "name"),
 }
 
 
@@ -107,6 +108,15 @@ def scan_all() -> dict:
                     d = _days_to(r["apply_date"])
                     if d is not None and d < -90 and r["approve_status"] in ("待审批", "超时未办"):
                         pending_list.append(add(code, rid, "move_approve", f"【{nm}】搬迁申请于 {r['apply_date']} 提交已超过90天，审批超时请处理", "yellow"))
+                # 三费收缴：按人聚合未缴项，任一未缴生成催缴预警
+                if code == "fee_collect":
+                    unpaid = [fn for fn, amt in (("医疗保险", r["medical_status"]),
+                                                 ("养老保险", r["pension_status"]),
+                                                 ("大病补充", r["supplement_status"]))
+                              if not amt or str(amt).strip() in ("0", "0.0", "")]
+                    if unpaid:
+                        pending_list.append(add(code, rid, "fee_unpaid",
+                                                f"【{r['fee_year']}】{nm} 未缴纳{'、'.join(unpaid)}，请通知户主及时缴费", "yellow"))
 
         current_set = current
         # 读取现有 pending 预警
