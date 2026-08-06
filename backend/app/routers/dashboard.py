@@ -22,6 +22,16 @@ def _group_count(table, field, extra_where="", params=()):
     return query_all(sql, params)
 
 
+def _is_paid(v):
+    """三费字段为金额：>0 视为已缴，0/空视为未缴"""
+    if v is None:
+        return False
+    try:
+        return float(v) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 @router.get("/overview")
 def overview(user: dict = Depends(get_current_user)):
     # 人口治理
@@ -51,12 +61,9 @@ def overview(user: dict = Depends(get_current_user)):
     }
     # 三费收缴
     fee_rows = query_all("SELECT * FROM t_fee_collect")
-    paid = sum(1 for r in fee_rows if r["medical_status"] == "已缴") + \
-        sum(1 for r in fee_rows if r["pension_status"] == "已缴") + \
-        sum(1 for r in fee_rows if r["supplement_status"] == "已缴")
-    unpaid = sum(1 for r in fee_rows if r["medical_status"] in ("未缴", None, "")) + \
-        sum(1 for r in fee_rows if r["pension_status"] in ("未缴", None, "")) + \
-        sum(1 for r in fee_rows if r["supplement_status"] in ("未缴", None, ""))
+    fee_fields = ("medical_status", "pension_status", "supplement_status")
+    paid = sum(1 for r in fee_rows for f in fee_fields if _is_paid(r[f]))
+    unpaid = sum(1 for r in fee_rows for f in fee_fields if not _is_paid(r[f]))
     base = paid + unpaid
     fee = {"total": len(fee_rows), "paid": paid, "unpaid": unpaid, "rate": round(paid / base * 100, 1) if base else 0}
     # 搬迁安置
