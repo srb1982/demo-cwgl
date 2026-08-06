@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -11,8 +12,42 @@ from ..services.sync import notify_data_changed
 
 router = APIRouter(prefix="/api/fields", tags=["fields"])
 
-VALID_TYPES = ["text", "number", "date", "image", "select"]
-VALID_COMPONENTS = {"text": "input", "number": "number", "date": "date", "image": "upload", "select": "select"}
+VALID_TYPES = ["text", "number", "date", "datetime", "image", "select", "boolean", "textarea"]
+VALID_COMPONENTS = {"text": "input", "number": "number", "date": "date", "datetime": "datetime",
+                    "image": "upload", "select": "select", "boolean": "switch", "textarea": "textarea"}
+
+try:
+    from pypinyin import lazy_pinyin
+    _HAS_PINYIN = True
+except Exception:  # 离线环境无 pypinyin 时回退编号方案
+    _HAS_PINYIN = False
+
+
+def _pinyin_code(text):
+    """中文/混合文本转英文编码：全拼小写，非字母数字转下划线，去重下划线。无有效拼音时返回 None"""
+    if not _HAS_PINYIN:
+        return None
+    parts = lazy_pinyin(text, errors=lambda x: x)
+    raw = "_".join(parts)
+    code = re.sub(r"[^a-z0-9]+", "_", raw.lower()).strip("_")
+    code = re.sub(r"_+", "_", code)
+    if len(code) > 50:
+        code = code[:50].rstrip("_")
+    return code or None
+
+
+def _unique_code(menu_code, base):
+    """同台账内保证编码唯一：冲突时追加 _2/_3..."""
+    if not base:
+        return None
+    exist = {r["physical_field"] for r in query_all(
+        "SELECT physical_field FROM sys_field_config WHERE menu_code=?", (menu_code,))}
+    if base not in exist:
+        return base
+    idx = 2
+    while f"{base}_{idx}" in exist:
+        idx += 1
+    return f"{base}_{idx}"
 
 # 被预警规则/大屏引用的内置字段，禁止删除
 PROTECTED_FIELDS = {
@@ -36,7 +71,14 @@ class FieldBody(BaseModel):
     show_in_form: int = 1
     is_required: int = 0
     options: list = None
+    props: dict = None
     sort_order: int = 0
+
+
+class SimpleFieldBody(BaseModel):
+    display_label: str = None
+    data_type: str = None
+    options: list = None
 
 
 def _menu_info(menu_code):
@@ -47,6 +89,10 @@ def _menu_info(menu_code):
 
 
 def _fmt(f):
+    try:
+        props = loads(f["props_json"] if f["props_json"] else None, {})
+    except Exception:
+        props = {}
     return {
         "id": f["id"], "menu_code": f["menu_code"], "physical_field": f["physical_field"],
         "display_label": f["display_label"], "data_type": f["data_type"],
@@ -54,7 +100,23 @@ def _fmt(f):
         "show_in_list": f["show_in_list"], "show_in_form": f["show_in_form"],
         "is_required": f["is_required"], "sort_order": f["sort_order"],
         "is_deleted": f["is_deleted"], "options": loads(f["options_json"], []),
+        "props": props,
     }
+
+
+def _create_field_impl(menu_code, table_name, display_label, data_type, options, show_in_list, show_in_form,
+                       is_required, sort, physical, props=None):
+    """事务化创建字段：建物理列 + 写配置，物理列名由调用方决定(存量 ext_{seq} / 简化模式拼音)"""
+    with get_db() as db:
+        ensure_column(db, table_name, physical, SQLITE_TYPE_MAP[data_type])
+        db.execute(
+            "INSERT INTO sys_field_config(menu_code,physical_field,display_label,data_type,form_component,is_system,show_in_list,show_in_form,is_required,sort_order,is_deleted,options_json,props_json,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (menu_code, physical, display_label, data_type, VALID_COMPONENTS[data_type], 0,
+             show_in_list, show_in_form, is_required, sort, 0,
+             dumps(options) if options else None,
+             dumps(props) if props else None,
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S"), datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
 
 
 @router.get("/{menu_code}")
@@ -83,18 +145,41 @@ async def create_field(menu_code: str, body: FieldBody, user: dict = Depends(req
     sort = (max_row["s"] or 0) + 1
     seq = query_one("SELECT COUNT(*) c FROM sys_field_config WHERE menu_code=?", (menu_code,))["c"] + 1
     physical = f"ext_{seq}"
-    with get_db() as db:
-        ensure_column(db, m["table_name"], physical, SQLITE_TYPE_MAP[body.data_type])
-        db.execute(
-            "INSERT INTO sys_field_config(menu_code,physical_field,display_label,data_type,form_component,is_system,show_in_list,show_in_form,is_required,sort_order,is_deleted,options_json,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (menu_code, physical, body.display_label, body.data_type, VALID_COMPONENTS[body.data_type], 0,
-             body.show_in_list, body.show_in_form, body.is_required, sort, 0,
-             dumps(body.options) if body.options else None,
-             datetime.now().strftime("%Y-%m-%d %H:%M:%S"), datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-        )
+    _create_field_impl(menu_code, m["table_name"], body.display_label, body.data_type, body.options,
+                       body.show_in_list, body.show_in_form, body.is_required, sort, physical, body.props)
     log_operation(user, "新增字段", "字段配置", f"台账[{m['name']}]新增字段 {body.display_label}", get_client_ip(request))
     await notify_data_changed(menu_code, "field")
     return {"message": "字段创建成功", "physical_field": physical}
+
+
+@router.post("/{menu_code}/simple")
+async def create_simple_field(menu_code: str, body: SimpleFieldBody,
+                              user: dict = Depends(require_roles(ROLE_ADMIN)), request: Request = None):
+    """简化模式：仅填显示名称+类型，系统自动生成英文编码与排序号"""
+    m = _menu_info(menu_code)
+    if not body.display_label:
+        raise HTTPException(status_code=400, detail="字段名称必填")
+    if body.data_type not in VALID_TYPES:
+        raise HTTPException(status_code=400, detail="字段类型不合法")
+    max_row = query_one("SELECT MAX(sort_order) s FROM sys_field_config WHERE menu_code=? AND is_deleted=0", (menu_code,))
+    sort = (max_row["s"] or 0) + 1
+    seq = query_one("SELECT COUNT(*) c FROM sys_field_config WHERE menu_code=?", (menu_code,))["c"] + 1
+    physical = _unique_code(menu_code, _pinyin_code(body.display_label)) or f"ext_{seq}"
+    _create_field_impl(menu_code, m["table_name"], body.display_label, body.data_type, body.options,
+                       1, 1, 0, sort, physical, None)
+    log_operation(user, "新增字段", "字段配置", f"台账[{m['name']}]简化新增字段 {body.display_label}（{physical}）", get_client_ip(request))
+    await notify_data_changed(menu_code, "field")
+    return {"message": "字段创建成功", "physical_field": physical}
+
+
+@router.get("/{menu_code}/code-suggest")
+def field_code_suggest(menu_code: str, label: str = "", user: dict = Depends(get_current_user)):
+    """编码自动生成建议：供前端实时预览，无权限限制"""
+    _menu_info(menu_code)
+    base = _pinyin_code(label) if label else None
+    if not base:
+        return {"suggest": "", "note": "无法自动生成英文编码，将使用编号方案"}
+    return {"suggest": _unique_code(menu_code, base)}
 
 
 @router.put("/{field_id}")
@@ -103,11 +188,22 @@ async def update_field(field_id: int, body: FieldBody, user: dict = Depends(requ
     if not f:
         raise HTTPException(status_code=404, detail="字段不存在")
     m = _menu_info(f["menu_code"])
+    # 系统内置字段：类型与编码锁定，禁止变更
+    if f["is_system"] == 1 and body.data_type and body.data_type != f["data_type"]:
+        raise HTTPException(status_code=400, detail="系统内置字段类型锁定保护，禁止变更")
+    is_required = body.is_required if body.is_required is not None else f["is_required"]
+    show_in_form = body.show_in_form if body.show_in_form is not None else f["show_in_form"]
+    # 必填字段不可隐藏（表单展示锁定）
+    if is_required == 1 and show_in_form == 0:
+        raise HTTPException(status_code=400, detail="必填字段不可在录入表单中隐藏")
+    if body.props is not None and not isinstance(body.props, dict):
+        raise HTTPException(status_code=400, detail="校验规则格式不合法")
     execute(
-        "UPDATE sys_field_config SET display_label=?,show_in_list=?,show_in_form=?,is_required=?,sort_order=?,options_json=?,update_time=? WHERE id=?",
-        (body.display_label or f["display_label"], body.show_in_list, body.show_in_form, body.is_required,
+        "UPDATE sys_field_config SET display_label=?,show_in_list=?,show_in_form=?,is_required=?,sort_order=?,options_json=?,props_json=?,update_time=? WHERE id=?",
+        (body.display_label or f["display_label"], body.show_in_list, show_in_form, is_required,
          body.sort_order if body.sort_order else f["sort_order"],
          dumps(body.options) if body.options is not None else f["options_json"],
+         dumps(body.props) if body.props is not None else f["props_json"],
          datetime.now().strftime("%Y-%m-%d %H:%M:%S"), field_id),
     )
     log_operation(user, "修改字段", "字段配置", f"台账[{m['name']}]修改字段 {f['physical_field']}", get_client_ip(request))
@@ -159,7 +255,23 @@ async def sort_fields(menu_code: str, body: SortBody, user: dict = Depends(requi
 
 
 @router.get("/library/list")
-def field_library(user: dict = Depends(require_roles(ROLE_ADMIN))):
-    rows = query_all("SELECT * FROM sys_field_library")
+def field_library(category: str = "", keyword: str = "", user: dict = Depends(require_roles(ROLE_ADMIN))):
+    sql = "SELECT * FROM sys_field_library"
+    params = []
+    if category:
+        sql += " WHERE category=?"
+        params.append(category)
+    if keyword:
+        sql += " AND" if category else " WHERE"
+        sql += " (label LIKE ? OR name LIKE ?)"
+        params += [f"%{keyword}%", f"%{keyword}%"]
+    rows = query_all(sql + " ORDER BY id", params)
     return [{"id": r["id"], "name": r["name"], "label": r["label"], "data_type": r["data_type"],
-             "form_component": r["form_component"], "options": loads(r["options_json"], [])} for r in rows]
+             "form_component": r["form_component"], "options": loads(r["options_json"], []),
+             "category": r["category"]} for r in rows]
+
+
+@router.get("/library/categories")
+def field_library_categories(user: dict = Depends(require_roles(ROLE_ADMIN))):
+    rows = query_all("SELECT DISTINCT category FROM sys_field_library WHERE category IS NOT NULL AND category!=''")
+    return [r["category"] for r in rows]

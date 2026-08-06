@@ -67,6 +67,9 @@ SQLITE_TYPE_MAP = {
     "text": "TEXT",
     "number": "REAL",
     "date": "TEXT",
+    "datetime": "TEXT",
     "image": "TEXT",
     "select": "TEXT",
+    "boolean": "INTEGER",
+    "textarea": "TEXT",
 }

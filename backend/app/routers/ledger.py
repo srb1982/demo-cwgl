@@ -83,12 +83,16 @@ def _fields(menu_code, include_deleted=False):
     rows = query_all(sql + " ORDER BY sort_order,id", params)
     out = []
     for f in rows:
+        try:
+            props = loads(f["props_json"] if f["props_json"] else None, {})
+        except Exception:
+            props = {}
         out.append({
             "id": f["id"], "physical_field": f["physical_field"], "display_label": f["display_label"],
             "data_type": f["data_type"], "form_component": f["form_component"], "is_system": f["is_system"],
             "show_in_list": f["show_in_list"], "show_in_form": f["show_in_form"],
             "is_required": f["is_required"], "sort_order": f["sort_order"],
-            "options": loads(f["options_json"], []),
+            "options": loads(f["options_json"], []), "props": props,
         })
     return out
 

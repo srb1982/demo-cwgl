@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Table, Button, Space, Input, Modal, Form, Select, DatePicker, InputNumber, Upload,
-  App, Tag, Dropdown, Checkbox, Image, Popconfirm, Typography,
+  App, Tag, Dropdown, Checkbox, Image, Popconfirm, Typography, Switch,
 } from 'antd'
 import {
   PlusOutlined, ReloadOutlined, ImportOutlined, ExportOutlined, UploadOutlined,
@@ -17,8 +17,18 @@ import { isWritable } from '../store/auth'
 import { subscribeDataChanged } from '../socket'
 
 const typeTagColor: Record<string, string> = {
-  text: 'default', select: 'blue', number: 'purple', date: 'green', image: 'orange',
+  text: 'default', select: 'blue', number: 'purple', date: 'green', datetime: 'green',
+  image: 'orange', boolean: 'gold', textarea: 'default',
 }
+
+const formatPatterns: Record<string, RegExp> = {
+  phone: /^1[3-9]\d{9}$/,
+  id_card: /^(\d{15}|\d{17}[\dXx])$/,
+  email: /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/,
+  url: /^(https?:\/\/)?[\w.-]+(\.[\w-]+)+(\/\S*)?$/,
+}
+
+const formatNames: Record<string, string> = { phone: '手机号', id_card: '身份证号', email: '邮箱', url: '网址' }
 
 export default function LedgerPage() {
   const { code } = useParams()
@@ -103,8 +113,15 @@ export default function LedgerPage() {
     if (field.data_type === 'select') {
       return <Tag color={typeTagColor.select}>{val || '-'}</Tag>
     }
+    if (field.data_type === 'boolean') {
+      return val ? <Tag color="green">是</Tag> : <Tag>否</Tag>
+    }
     if (field.data_type === 'number' && typeof val === 'number') {
       return Number.isInteger(val) ? String(val) : val
+    }
+    if (field.data_type === 'textarea' && val) {
+      const s = String(val)
+      return <span title={s}>{s.length > 20 ? `${s.slice(0, 20)}…` : s}</span>
     }
     const dup = field.physical_field === 'id_card' && dupResult?.id_card?.some((d: any) => d.value === val)
     const dupH = field.physical_field === 'household_no' && dupResult?.household_no?.some((d: any) => d.value === val)
@@ -178,7 +195,13 @@ export default function LedgerPage() {
     for (const f of res.fields) {
       const v = res.item[f.physical_field]
       if (v === null || v === undefined) continue
-      values[f.physical_field] = f.data_type === 'date' && v ? dayjs(v) : v
+      if (f.data_type === 'date' || f.data_type === 'datetime') {
+        values[f.physical_field] = v ? dayjs(v) : undefined
+      } else if (f.data_type === 'boolean') {
+        values[f.physical_field] = !!v
+      } else {
+        values[f.physical_field] = v
+      }
     }
     form.setFieldsValue(values)
     setEditing({ id })
@@ -197,7 +220,15 @@ export default function LedgerPage() {
     for (const f of formFields) {
       const v = values[f.physical_field]
       if (v === undefined) continue
-      payload[f.physical_field] = f.data_type === 'date' ? dayjs(v).format('YYYY-MM-DD') : v
+      if (f.data_type === 'date') {
+        payload[f.physical_field] = dayjs(v).format('YYYY-MM-DD')
+      } else if (f.data_type === 'datetime') {
+        payload[f.physical_field] = dayjs(v).format('YYYY-MM-DD HH:mm:ss')
+      } else if (f.data_type === 'boolean') {
+        payload[f.physical_field] = v ? 1 : 0
+      } else {
+        payload[f.physical_field] = v
+      }
     }
     if (editing?.id) {
       await updateLedgerItem(code!, editing.id, payload)
@@ -250,18 +281,26 @@ export default function LedgerPage() {
   }
 
   const renderFormControl = (f: any) => {
+    const ph = f.props?.placeholder
     switch (f.data_type) {
       case 'number':
-        return <InputNumber style={{ width: '100%' }} />
+        return <InputNumber style={{ width: '100%' }} placeholder={ph} />
       case 'date':
-        return <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+        return <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" placeholder={ph} />
+      case 'datetime':
+        return <DatePicker style={{ width: '100%' }} showTime format="YYYY-MM-DD HH:mm:ss" placeholder={ph} />
       case 'select':
         return (
           <Select
             allowClear
+            placeholder={ph}
             options={(f.options || []).map((o: string) => ({ label: o, value: o }))}
           />
         )
+      case 'boolean':
+        return <Switch />
+      case 'textarea':
+        return <Input.TextArea rows={3} placeholder={ph} maxLength={f.props?.max_length ? Number(f.props.max_length) : undefined} />
       case 'image':
         return (
           <Upload
@@ -274,8 +313,21 @@ export default function LedgerPage() {
           </Upload>
         )
       default:
-        return <Input />
+        return <Input placeholder={ph} maxLength={f.props?.max_length ? Number(f.props.max_length) : undefined} />
     }
+  }
+
+  const buildRules = (f: any) => {
+    const rules: any[] = []
+    if (f.is_required) rules.push({ required: true, message: `请填写${f.display_label}` })
+    const props = f.props || {}
+    if (props.max_length) {
+      rules.push({ max: Number(props.max_length), message: `最多输入 ${props.max_length} 个字符` })
+    }
+    if (props.format_type && formatPatterns[props.format_type]) {
+      rules.push({ pattern: formatPatterns[props.format_type], message: `${f.display_label}格式不正确` })
+    }
+    return rules
   }
 
   return (
@@ -364,9 +416,10 @@ export default function LedgerPage() {
                 key={f.physical_field}
                 name={f.physical_field}
                 label={f.display_label}
-                rules={[{ required: !!f.is_required, message: `请填写${f.display_label}` }]}
+                rules={buildRules(f)}
                 style={{ gridColumn: f.data_type === 'text' ? 'span 1' : undefined }}
-                extra={f.data_type === 'image' ? '支持上传图片或常用文档（JPG/PNG/PDF/Word/Excel）' : undefined}
+                extra={f.data_type === 'image' ? '支持上传图片或常用文档（JPG/PNG/PDF/Word/Excel）' : f.props?.tips}
+                valuePropName={f.data_type === 'boolean' ? 'checked' : 'value'}
               >
                 {renderFormControl(f)}
               </Form.Item>
@@ -389,6 +442,8 @@ export default function LedgerPage() {
                 <span style={{ color: '#8c8c8c', marginRight: 8 }}>{f.display_label}：</span>
                 {f.data_type === 'image' && detail[f.physical_field] ? (
                   <Image src={detail[f.physical_field]} width={120} />
+                ) : f.data_type === 'boolean' ? (
+                  detail[f.physical_field] ? <Tag color="green">是</Tag> : <Tag>否</Tag>
                 ) : (
                   <Typography.Text copyable={['id_card', 'phone', 'visa_no'].includes(f.physical_field)}>
                     {detail[f.physical_field] ?? '-'}
