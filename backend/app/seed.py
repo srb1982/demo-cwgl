@@ -697,6 +697,9 @@ def init_db():
                 (f["name"], f["label"], f["data_type"], f["form_component"], dumps(f["options"]) if f["options"] else None),
             )
 
+    # ---------------- 原移风易俗台账菜单隐藏（数据保留，红事/白事替代） ----------------
+    cur.execute("UPDATE sys_menu_config SET is_visible=0 WHERE code='custom_rural' AND is_visible=1")
+
     # ---------------- 角色 ----------------
     roles = [(config.ROLE_ADMIN, "超级管理员"), (config.ROLE_MANAGER, "普通管理员"), (config.ROLE_VIEWER, "只读用户")]
     for code, name in roles:
