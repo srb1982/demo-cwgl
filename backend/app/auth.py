@@ -69,12 +69,13 @@ def get_client_ip(request: Request) -> str:
 def mask_value(field: str, value):
     if value is None:
         return value
-    if field not in ("id_card", "phone", "guardian_phone", "responsible_phone", "visa_no"):
+    phone_fields = ("phone", "guardian_phone", "responsible_phone", "parent_phone", "emergency_phone", "helper_phone")
+    if field not in ("id_card",) + phone_fields + ("visa_no",):
         return value
     s = str(value)
     if field == "id_card" and len(s) >= 15:
         return s[:4] + "*" * (len(s) - 8) + s[-4:]
-    if field in ("phone", "guardian_phone", "responsible_phone") and len(s) == 11:
+    if field in phone_fields and len(s) == 11:
         return s[:3] + "****" + s[-4:]
     if field == "visa_no" and len(s) > 4:
         return s[:2] + "***" + s[-2:]

@@ -16,7 +16,8 @@ from ..services.sync import notify_data_changed
 
 router = APIRouter(prefix="/api/ledger", tags=["ledger"])
 
-SENSITIVE_FIELDS = {"id_card", "phone", "visa_no", "guardian_phone", "responsible_phone"}
+SENSITIVE_FIELDS = {"id_card", "phone", "visa_no", "guardian_phone", "responsible_phone",
+                    "parent_phone", "emergency_phone", "helper_phone"}
 
 WRITABLE = [ROLE_ADMIN, ROLE_MANAGER]
 
