@@ -209,6 +209,12 @@ async def update_field(field_id: int, body: FieldBody, user: dict = Depends(requ
     # 系统内置字段：类型与编码锁定，禁止变更
     if f["is_system"] == 1 and body.data_type and body.data_type != f["data_type"]:
         raise HTTPException(status_code=400, detail="系统内置字段类型锁定保护，禁止变更")
+    if body.data_type and body.data_type not in VALID_TYPES:
+        raise HTTPException(status_code=400, detail="字段类型不合法")
+    if body.data_type and body.data_type != f["data_type"] and f["is_system"] == 0:
+        # 自定义字段类型修改：更新配置层与组件映射，物理列由 SQLite 动态类型兼容
+        execute("UPDATE sys_field_config SET data_type=?,form_component=? WHERE id=?",
+                (body.data_type, VALID_COMPONENTS[body.data_type], field_id))
     is_required = body.is_required if body.is_required is not None else f["is_required"]
     show_in_form = body.show_in_form if body.show_in_form is not None else f["show_in_form"]
     # 必填字段不可隐藏（表单展示锁定）

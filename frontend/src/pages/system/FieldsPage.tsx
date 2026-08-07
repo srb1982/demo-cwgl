@@ -121,7 +121,7 @@ export default function FieldsPage() {
   const submit = async () => {
     const values = await form.validateFields()
     const props: any = {}
-    for (const k of ['placeholder', 'tips', 'max_length', 'format_type']) {
+    for (const k of ['placeholder', 'tips', 'max_length', 'format_type', 'default_value', 'regex', 'regex_message']) {
       const v = values[k]
       if (v !== undefined && v !== '' && v !== null) props[k] = k === 'max_length' ? Number(v) : v
     }
@@ -203,6 +203,7 @@ export default function FieldsPage() {
               options: r.options?.join(','),
               placeholder: props.placeholder, tips: props.tips,
               max_length: props.max_length, format_type: props.format_type || '',
+              default_value: props.default_value, regex: props.regex, regex_message: props.regex_message,
             })
           }}>编辑</Button>
           <Popconfirm title="删除后字段进入回收站，历史数据保留，确认删除？" onConfirm={async () => {
@@ -471,6 +472,26 @@ export default function FieldsPage() {
           <Form.Item name="display_label" label="字段显示名称" rules={[{ required: true, message: '请输入显示名称' }]}>
             <Input placeholder="如 文化程度" onChange={(e) => onLabelChange(e.target.value)} />
           </Form.Item>
+          {isSystem && (
+            <Alert type="warning" showIcon style={{ marginBottom: 12 }}
+              message="系统内置字段：字段类型与编码锁定保护，仅可调整显示名称、展示与校验规则。" />
+          )}
+          {!isSystem && modalState?.id && codeSuggest && (
+            <Alert type="info" showIcon style={{ marginBottom: 12 }}
+              message={<>自动生成字段编码：<code>{codeSuggest}</code></>} />
+          )}
+          <Form.Item name="data_type" label="字段类型" rules={[{ required: true }]}>
+            <Select
+              disabled={isSystem}
+              options={typeOptions}
+              optionRender={(opt) => typeSelectRender(opt)}
+              onChange={() => { if (form.getFieldValue('data_type') !== 'select') form.setFieldValue('options', undefined) }}
+            />
+          </Form.Item>
+          {!isSystem && modalState?.id && (
+            <Alert type="warning" showIcon style={{ marginBottom: 12 }}
+              message="修改字段类型后，已有历史数据将以新类型展示（部分数据可能无法正确解析），请谨慎操作。" />
+          )}
           <Form.Item name="data_type" label="字段类型" rules={[{ required: true }]}>
             <Select
               disabled={isSystem}
@@ -506,6 +527,17 @@ export default function FieldsPage() {
               <Input placeholder="表单下方灰色说明文字" />
             </Form.Item>
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 12 }}>
+            <Form.Item name="default_value" label="字段默认值">
+              <Input placeholder="新增记录时自动填入" />
+            </Form.Item>
+            <Form.Item name="regex_message" label="正则校验提示">
+              <Input placeholder="正则不匹配时的提示文字" />
+            </Form.Item>
+          </div>
+          <Form.Item name="regex" label="自定义正则表达式" extra="与上方格式校验二选一，用于特殊格式需求">
+            <Input placeholder="如 ^1[3-9]\d{9}$" />
+          </Form.Item>
           <Form.Item name="show_in_list" label="台账列表展示" valuePropName="checked">
             <Switch />
           </Form.Item>

@@ -210,6 +210,15 @@ export default function LedgerPage() {
 
   const openCreate = () => {
     form.resetFields()
+    const defaults: any = {}
+    for (const f of formFields) {
+      const dv = (f.props || {}).default_value
+      if (dv === undefined || dv === '') continue
+      if (f.data_type === 'date' || f.data_type === 'datetime') continue
+      if (f.data_type === 'boolean') { defaults[f.physical_field] = !!dv; continue }
+      defaults[f.physical_field] = dv
+    }
+    if (Object.keys(defaults).length) form.setFieldsValue(defaults)
     setEditing({ id: null })
     setFormOpen(true)
   }
@@ -326,6 +335,11 @@ export default function LedgerPage() {
     }
     if (props.format_type && formatPatterns[props.format_type]) {
       rules.push({ pattern: formatPatterns[props.format_type], message: `${f.display_label}格式不正确` })
+    }
+    if (props.regex) {
+      try {
+        rules.push({ pattern: new RegExp(props.regex), message: props.regex_message || `${f.display_label}格式不正确` })
+      } catch { /* 无效正则表达式忽略 */ }
     }
     return rules
   }
