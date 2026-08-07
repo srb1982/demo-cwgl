@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Table, Button, Space, Select, Modal, Form, Input, Switch, App, Popconfirm, Tag, Tabs, Alert,
   InputNumber, Checkbox, Tooltip,
@@ -10,8 +10,9 @@ import {
 import {
   getMenus, getFields, getRecycleFields, createField, updateField, deleteField, restoreField,
   sortFields, getFieldLibrary, getFieldLibraryCategories, createSimpleField, fieldCodeSuggest,
+  createFieldCategory, renameFieldCategory, deleteFieldCategory,
 } from '../../api'
-import { isWritable } from '../../store/auth'
+import { isWritable, isAdmin } from '../../store/auth'
 
 const typeName: Record<string, string> = {
   text: '文本', number: '数字', date: '日期', datetime: '日期时间', image: '图片',
@@ -22,15 +23,21 @@ const typeColor: Record<string, string> = {
   select: 'blue', boolean: 'gold', textarea: 'default',
 }
 const typeOptions = [
-  { label: '文本', value: 'text' },
-  { label: '数字', value: 'number' },
-  { label: '日期', value: 'date' },
-  { label: '日期时间', value: 'datetime' },
-  { label: '图片', value: 'image' },
-  { label: '下拉选项', value: 'select' },
-  { label: '开关（是/否）', value: 'boolean' },
-  { label: '多行文本', value: 'textarea' },
+  { label: '文本', value: 'text', desc: '单行文本输入，适用于名称、编码等', example: '用户名、商品名称、订单编号' },
+  { label: '数字', value: 'number', desc: '数字输入（含小数），适用于金额、比率等', example: '金额、评分、年龄' },
+  { label: '日期', value: 'date', desc: '日期选择器，适用于出生日期、入职日期等', example: '出生日期、入职日期' },
+  { label: '日期时间', value: 'datetime', desc: '日期时间选择器，适用于创建时间等', example: '创建时间、更新时间' },
+  { label: '图片', value: 'image', desc: '图片/文档上传，适用于照片、证件等', example: '照片、身份证附件' },
+  { label: '下拉选项', value: 'select', desc: '枚举下拉选择，需配置选项列表', example: '性别、状态、类型' },
+  { label: '开关（是/否）', value: 'boolean', desc: '布尔开关，适用于是否类', example: '是否启用、是否低保' },
+  { label: '多行文本', value: 'textarea', desc: '多行文本输入，适用于备注、简介等', example: '备注、描述、简介' },
 ]
+const typeSelectRender = (t: any) => (
+  <div>
+    <b>{t.label}</b>
+    <div className="cw-muted" style={{ fontSize: 12, lineHeight: 1.4 }}>{t.desc}</div>
+  </div>
+)
 const formatOptions = [
   { label: '无格式限制', value: '' },
   { label: '手机号', value: 'phone' },
@@ -60,6 +67,9 @@ export default function FieldsPage() {
   const [libType, setLibType] = useState('')
   const [libKeyword, setLibKeyword] = useState('')
   const [libSelected, setLibSelected] = useState<number[]>([])
+  const [catOpen, setCatOpen] = useState(false)
+  const [catName, setCatName] = useState('')
+  const currentLabels = useMemo(() => new Set(list.map((f) => f.display_label)), [list])
 
   const loadLedgers = useCallback(async () => {
     const res: any = await getMenus()
@@ -275,7 +285,12 @@ export default function FieldsPage() {
 
   const batchAddFromLibrary = async () => {
     if (!libSelected.length) return
-    const items = library.filter((i) => libSelected.includes(i.id))
+    const items = library.filter((i) => libSelected.includes(i.id) && !currentLabels.has(i.label))
+    if (!items.length) {
+      message.info('所选字段均已添加到当前台账')
+      setLibSelected([])
+      return
+    }
     modal.confirm({
       title: `批量添加 ${items.length} 个预置字段？`,
       content: `将依次创建：${items.map((i) => i.label).join('、')}`,
@@ -377,26 +392,33 @@ export default function FieldsPage() {
                         )}
                       </>
                     )}
+                    {writable && isAdmin() && (
+                      <Button onClick={() => { setCatOpen(true); setCatName('') }}>管理分类</Button>
+                    )}
                     {!writable && (
                       <span className="cw-muted">只读模式：可浏览字段库，添加字段请使用「创建自定义字段」</span>
                     )}
                   </Space>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
-                    {filteredLib.map((item) => (
+                    {filteredLib.map((item) => {
+                      const added = currentLabels.has(item.label)
+                      return (
                       <div
                         key={item.id}
                         className="cw-card"
                         style={{
-                          marginBottom: 0, cursor: writable ? 'pointer' : 'default', position: 'relative',
+                          marginBottom: 0, cursor: writable && !added ? 'pointer' : 'default', position: 'relative',
+                          opacity: added ? 0.75 : 1,
                           borderColor: libSelected.includes(item.id) ? '#c9a86a' : undefined,
                           boxShadow: libSelected.includes(item.id) ? '0 0 0 2px rgba(201,168,106,.25)' : undefined,
                         }}
-                        onClick={() => { if (writable) addFromLibrary(item) }}
+                        onClick={() => { if (writable && !added) addFromLibrary(item) }}
                       >
                         {writable && (
                           <Checkbox
                             style={{ position: 'absolute', top: 8, right: 8 }}
                             checked={libSelected.includes(item.id)}
+                            disabled={added}
                             onClick={(e) => e.stopPropagation()}
                             onChange={(e) => {
                               setLibSelected((prev) => e.target.checked
@@ -410,13 +432,18 @@ export default function FieldsPage() {
                           <b>{item.label}</b>
                           {typeTag(item.data_type)}
                         </Space>
-                        {item.category && <Tag style={{ marginTop: 6 }} color="geekblue">{item.category}</Tag>}
+                        {added ? (
+                          <Tag style={{ marginTop: 6 }} color="success">已添加到当前台账</Tag>
+                        ) : (
+                          item.category && <Tag style={{ marginTop: 6 }} color="geekblue">{item.category}</Tag>
+                        )}
                         <div className="cw-muted" style={{ marginTop: 6 }}>
                           <span style={{ marginRight: 12 }}>编码 {item.name}</span>
-                          {writable ? <span>点击单条添加，勾选可批量添加</span> : <span>字段库预置字段</span>}
+                          {added ? <span>禁止重复添加</span> : writable ? <span>点击单条添加，勾选可批量添加</span> : <span>字段库预置字段</span>}
                         </div>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               ),
@@ -448,6 +475,7 @@ export default function FieldsPage() {
             <Select
               disabled={isSystem}
               options={typeOptions}
+              optionRender={(opt) => typeSelectRender(opt)}
               onChange={() => { if (form.getFieldValue('data_type') !== 'select') form.setFieldValue('options', undefined) }}
             />
           </Form.Item>
@@ -507,6 +535,92 @@ export default function FieldsPage() {
       </Modal>
 
       <Modal
+        title="字段库分类管理"
+        open={catOpen}
+        onCancel={() => setCatOpen(false)}
+        footer={null}
+        width={520}
+      >
+        <Space style={{ marginBottom: 12 }} wrap>
+          <Input
+            placeholder="输入新分类名称" style={{ width: 240 }}
+            value={catName} onChange={(e) => setCatName(e.target.value)}
+            onPressEnter={async () => {
+              if (!catName.trim()) return
+              try {
+                await createFieldCategory(catName.trim())
+                message.success('分类已创建')
+                setCatName('')
+                loadFields()
+              } catch (e: any) { message.error(e?.response?.data?.detail || '创建失败') }
+            }}
+          />
+          <Button
+            type="primary" disabled={!catName.trim()}
+            onClick={async () => {
+              try {
+                await createFieldCategory(catName.trim())
+                message.success('分类已创建')
+                setCatName('')
+                loadFields()
+              } catch (e: any) { message.error(e?.response?.data?.detail || '创建失败') }
+            }}
+          >
+            新增分类
+          </Button>
+        </Space>
+        <div>
+          {categories.map((c) => {
+            const cnt = library.filter((i) => i.category === c).length
+            return (
+              <div key={c} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
+                <Space>
+                  <b>{c}</b>
+                  <Tag>{cnt} 个字段</Tag>
+                </Space>
+                <Space>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      modal.confirm({
+                        title: '重命名分类',
+                        content: <Input defaultValue={c} id="catRename" placeholder="新名称" />,
+                        onOk: async () => {
+                          const v = (document.getElementById('catRename') as HTMLInputElement)?.value
+                          if (!v?.trim()) return
+                          try {
+                            await renameFieldCategory(c, v.trim())
+                            message.success('已重命名')
+                            loadFields()
+                          } catch (e: any) { message.error(e?.response?.data?.detail || '重命名失败') }
+                        },
+                      })
+                    }}
+                  >
+                    重命名
+                  </Button>
+                  <Popconfirm
+                    title="确认删除该分类？"
+                    onConfirm={async () => {
+                      try {
+                        await deleteFieldCategory(c)
+                        message.success('已删除')
+                        loadFields()
+                      } catch (e: any) { message.error(e?.response?.data?.detail || '删除失败') }
+                    }}
+                  >
+                    <Button size="small" danger disabled={cnt > 0} title={cnt > 0 ? '分类下存在字段，不可删除' : undefined}>
+                      删除
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              </div>
+            )
+          })}
+        </div>
+      </Modal>
+
+      <Modal
         title="简化添加字段"
         open={simpleOpen}
         onCancel={() => setSimpleOpen(false)}
@@ -520,7 +634,7 @@ export default function FieldsPage() {
             <Input placeholder="如 婚姻状况" onChange={(e) => genSimpleCode(e.target.value)} />
           </Form.Item>
           <Form.Item name="data_type" label="字段类型" rules={[{ required: true }]}>
-            <Select options={typeOptions} />
+            <Select options={typeOptions} optionRender={(opt) => typeSelectRender(opt)} />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(a, b) => a.data_type !== b.data_type}>
             {() => simpleForm.getFieldValue('data_type') === 'select' && (

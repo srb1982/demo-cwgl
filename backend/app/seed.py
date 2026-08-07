@@ -510,17 +510,19 @@ MENUS = [
 ]
 
 FIELD_LIBRARY = [
-    {"name": "name", "label": "姓名", "data_type": "text", "form_component": "input", "options": None},
-    {"name": "id_card", "label": "身份证号", "data_type": "text", "form_component": "input", "options": None},
-    {"name": "phone", "label": "联系电话", "data_type": "text", "form_component": "input", "options": None},
-    {"name": "gender", "label": "性别", "data_type": "select", "form_component": "select", "options": ["男", "女"]},
-    {"name": "village_group", "label": "村民组", "data_type": "text", "form_component": "input", "options": None},
-    {"name": "birth_date", "label": "出生日期", "data_type": "date", "form_component": "date", "options": None},
-    {"name": "household_no", "label": "户号", "data_type": "text", "form_component": "input", "options": None},
-    {"name": "address", "label": "家庭住址", "data_type": "text", "form_component": "textarea", "options": None},
-    {"name": "remark", "label": "备注", "data_type": "text", "form_component": "textarea", "options": None},
-    {"name": "status", "label": "状态", "data_type": "select", "form_component": "select", "options": ["正常", "停用"]},
+    {"name": "name", "label": "姓名", "data_type": "text", "form_component": "input", "options": None, "category": "基础信息"},
+    {"name": "id_card", "label": "身份证号", "data_type": "text", "form_component": "input", "options": None, "category": "身份与家庭"},
+    {"name": "phone", "label": "联系电话", "data_type": "text", "form_component": "input", "options": None, "category": "联系方式"},
+    {"name": "gender", "label": "性别", "data_type": "select", "form_component": "select", "options": ["男", "女"], "category": "基础信息"},
+    {"name": "village_group", "label": "村民组", "data_type": "text", "form_component": "input", "options": None, "category": "身份与家庭"},
+    {"name": "birth_date", "label": "出生日期", "data_type": "date", "form_component": "date", "options": None, "category": "基础信息"},
+    {"name": "household_no", "label": "户号", "data_type": "text", "form_component": "input", "options": None, "category": "身份与家庭"},
+    {"name": "address", "label": "家庭住址", "data_type": "text", "form_component": "textarea", "options": None, "category": "基础信息"},
+    {"name": "remark", "label": "备注", "data_type": "text", "form_component": "textarea", "options": None, "category": "备注扩展"},
+    {"name": "status", "label": "状态", "data_type": "select", "form_component": "select", "options": ["正常", "停用"], "category": "状态信息"},
 ]
+
+FIELD_LIBRARY_CATEGORIES = ["基础信息", "身份与家庭", "联系方式", "状态信息", "备注扩展"]
 
 SYSTEM_MENU_TABLES = set()
 
@@ -584,7 +586,14 @@ def init_db():
             label TEXT NOT NULL,
             data_type TEXT NOT NULL,
             form_component TEXT,
-            options_json TEXT
+            options_json TEXT,
+            category TEXT
+        );
+        CREATE TABLE IF NOT EXISTS sys_field_category (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            sort_order INTEGER DEFAULT 0,
+            create_time TEXT
         );
         CREATE TABLE IF NOT EXISTS sys_oper_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -688,13 +697,21 @@ def init_db():
                      len(lg["fields"]) + 1, 0, None, now, now),
                 )
 
+    # ---------------- 字段库分类预置 ----------------
+    for idx, cat in enumerate(FIELD_LIBRARY_CATEGORIES):
+        cur.execute("SELECT COUNT(*) c FROM sys_field_category WHERE name=?", (cat,))
+        if cur.fetchone()["c"] == 0:
+            cur.execute("INSERT INTO sys_field_category(name,sort_order,create_time) VALUES(?,?,?)",
+                        (cat, idx + 1, now))
+
     # ---------------- 预置字段库 ----------------
     for f in FIELD_LIBRARY:
         cur.execute("SELECT COUNT(*) c FROM sys_field_library WHERE name=?", (f["name"],))
         if cur.fetchone()["c"] == 0:
             cur.execute(
-                "INSERT INTO sys_field_library(name,label,data_type,form_component,options_json) VALUES(?,?,?,?,?)",
-                (f["name"], f["label"], f["data_type"], f["form_component"], dumps(f["options"]) if f["options"] else None),
+                "INSERT INTO sys_field_library(name,label,data_type,form_component,options_json,category) VALUES(?,?,?,?,?,?)",
+                (f["name"], f["label"], f["data_type"], f["form_component"],
+                 dumps(f["options"]) if f["options"] else None, f.get("category")),
             )
 
     # ---------------- 原移风易俗台账菜单隐藏（数据保留，红事/白事替代） ----------------

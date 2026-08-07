@@ -142,6 +142,9 @@ async def create_field(menu_code: str, body: FieldBody, user: dict = Depends(req
         raise HTTPException(status_code=400, detail="字段名称必填")
     if body.data_type not in VALID_TYPES:
         raise HTTPException(status_code=400, detail="字段类型不合法")
+    if query_one("SELECT id FROM sys_field_config WHERE menu_code=? AND display_label=? AND is_deleted=0",
+                 (menu_code, body.display_label.strip())):
+        raise HTTPException(status_code=400, detail="该字段名称已添加到当前台账")
     # 引用检查：物理列名
     max_row = query_one("SELECT MAX(sort_order) s FROM sys_field_config WHERE menu_code=? AND is_deleted=0", (menu_code,))
     sort = (max_row["s"] or 0) + 1
@@ -163,6 +166,9 @@ async def create_simple_field(menu_code: str, body: SimpleFieldBody,
         raise HTTPException(status_code=400, detail="字段名称必填")
     if body.data_type not in VALID_TYPES:
         raise HTTPException(status_code=400, detail="字段类型不合法")
+    if query_one("SELECT id FROM sys_field_config WHERE menu_code=? AND display_label=? AND is_deleted=0",
+                 (menu_code, body.display_label.strip())):
+        raise HTTPException(status_code=400, detail="该字段名称已添加到当前台账")
     max_row = query_one("SELECT MAX(sort_order) s FROM sys_field_config WHERE menu_code=? AND is_deleted=0", (menu_code,))
     sort = (max_row["s"] or 0) + 1
     seq = query_one("SELECT COUNT(*) c FROM sys_field_config WHERE menu_code=?", (menu_code,))["c"] + 1
@@ -290,5 +296,50 @@ def field_library(category: str = "", keyword: str = "", field_type: str = "",
 
 @router.get("/library/categories")
 def field_library_categories(user: dict = Depends(get_current_user)):
-    rows = query_all("SELECT DISTINCT category FROM sys_field_library WHERE category IS NOT NULL AND category!=''")
-    return [r["category"] for r in rows]
+    rows = query_all("SELECT name FROM sys_field_category ORDER BY sort_order,id")
+    return [r["name"] for r in rows]
+
+
+class CategoryBody(BaseModel):
+    name: str = None
+
+
+@router.post("/library/categories")
+def create_category(body: CategoryBody, user: dict = Depends(require_roles(ROLE_ADMIN))):
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="分类名称不能为空")
+    if len(name) > 20:
+        raise HTTPException(status_code=400, detail="分类名称过长（最多20字）")
+    if query_one("SELECT id FROM sys_field_category WHERE name=?", (name,)):
+        raise HTTPException(status_code=400, detail="分类已存在")
+    max_sort = query_one("SELECT MAX(sort_order) s FROM sys_field_category")
+    execute("INSERT INTO sys_field_category(name,sort_order,create_time) VALUES(?,?,?)",
+            (name, (max_sort["s"] or 0) + 1, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    return {"message": "分类已创建"}
+
+
+@router.put("/library/categories/{old_name}")
+def rename_category(old_name: str, body: CategoryBody, user: dict = Depends(require_roles(ROLE_ADMIN))):
+    name = (body.name or "").strip()
+    if not name or len(name) > 20:
+        raise HTTPException(status_code=400, detail="分类名称不合法")
+    if not query_one("SELECT id FROM sys_field_category WHERE name=?", (old_name,)):
+        raise HTTPException(status_code=404, detail="分类不存在")
+    if query_one("SELECT id FROM sys_field_category WHERE name=?", (name,)):
+        raise HTTPException(status_code=400, detail="分类已存在")
+    with get_db() as db:
+        db.execute("UPDATE sys_field_category SET name=? WHERE name=?", (name, old_name))
+        db.execute("UPDATE sys_field_library SET category=? WHERE category=?", (name, old_name))
+    return {"message": "分类已重命名"}
+
+
+@router.delete("/library/categories/{name}")
+def delete_category(name: str, user: dict = Depends(require_roles(ROLE_ADMIN))):
+    if not query_one("SELECT id FROM sys_field_category WHERE name=?", (name,)):
+        raise HTTPException(status_code=404, detail="分类不存在")
+    cnt = query_one("SELECT COUNT(*) c FROM sys_field_library WHERE category=?", (name,))["c"]
+    if cnt > 0:
+        raise HTTPException(status_code=400, detail=f"该分类下还有 {cnt} 个字段，请先移出或删除字段")
+    execute("DELETE FROM sys_field_category WHERE name=?", (name,))
+    return {"message": "分类已删除"}
