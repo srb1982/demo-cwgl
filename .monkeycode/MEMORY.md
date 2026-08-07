@@ -43,3 +43,11 @@ Entries discovered by the Agent during task execution should follow this format:
   - 三费字段约定：t_fee_collect 的 medical_status/pension_status/supplement_status 为金额存储（>0 已缴、0/空 未缴），三费面板(/api/fee)、大屏(/api/dashboard)、预警引擎(/api/warnings 扫描)均按金额判断，勿再用旧下拉值"已缴/未缴"。移风易俗已拆分为红事 t_custom_red 与白事 t_custom_white 两个台账，原 t_custom_rural 菜单隐藏（is_visible=0）保留数据。
   - 接口前缀：预警模块统一前缀为复数 `/api/warnings`（list/summary/scan/export/{id}/handle/{id}/postpone），三费为 `/api/fee`（years/groups/summary/unpaid/export），系统为 `/api/system`（backup/backups/restore/logs/config/archive-year/screen-config）。
   - 已知坑：导出/上传文件 Content-Disposition 必须使用 `filename*=UTF-8''{quote(fname)}`，否则中文文件名导致 500；元数据自定义字段物理列为 ext_N，事务化 ALTER TABLE 加列，删除走回收站软删除并保护内置字段；年度封存会对每张台账建 `t_*_{year}` 存档表并清空原表，封存前自动备份。
+
+[Project Knowledge Summary]
+- Date: 2026-08-07
+- Context: Discovered by Agent while 为字段配置模块编写 pytest 集成测试
+- Category: Testing Methods
+- Instructions:
+  - 后端集成测试：`cd backend && python3 -m pytest tests/ -v`；依赖 pytest 与 httpx（已全局安装）。测试通过 conftest.py 自动切换到临时隔离 SQLite 库并执行 seed 初始化，不触碰生产 data/village.db；覆盖字段模块权限矩阵、必填保护、系统字段锁定、防重、编码生成、分类管理、回收站、排序、新台账自动初始化等 29 项断言。新增后端改动后跑一遍该套件可快速回归。
+  - 后端新增依赖一律 `pip install --break-system-packages <pkg>`（系统 Python 无 venv）。
