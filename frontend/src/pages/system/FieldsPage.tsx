@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Table, Button, Space, Select, Modal, Form, Input, Switch, App, Popconfirm, Tag, Tabs, Alert,
-  InputNumber, Checkbox, Tooltip,
+  InputNumber, Checkbox, Tooltip, Tree,
 } from 'antd'
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined,
-  UndoOutlined, LockOutlined, DatabaseOutlined, ThunderboltOutlined, CheckOutlined,
+  UndoOutlined, LockOutlined, DatabaseOutlined, ThunderboltOutlined, CheckOutlined, FolderOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons'
 import {
   getMenus, getFields, getRecycleFields, createField, updateField, deleteField, restoreField,
@@ -49,7 +50,8 @@ const formatOptions = [
 export default function FieldsPage() {
   const { message, modal } = App.useApp()
   const writable = isWritable()
-  const [ledgers, setLedgers] = useState<any[]>([])
+  const [allMenus, setAllMenus] = useState<any[]>([])
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([])
   const [menuCode, setMenuCode] = useState('')
   const [list, setList] = useState<any[]>([])
   const [recycle, setRecycle] = useState<any[]>([])
@@ -71,11 +73,45 @@ export default function FieldsPage() {
   const [catName, setCatName] = useState('')
   const currentLabels = useMemo(() => new Set(list.map((f) => f.display_label)), [list])
 
+  const menuTree = useMemo(() => {
+    const map = new Map<string, any>()
+    allMenus.forEach((m) => map.set(m.code, { ...m, key: m.code, children: [] }))
+    const roots: any[] = []
+    allMenus.forEach((m) => {
+      const node = map.get(m.code)!
+      if (m.parent_code && map.has(m.parent_code)) map.get(m.parent_code).children.push(node)
+      else roots.push(node)
+    })
+    return roots
+  }, [allMenus])
+
+  const menuPath = useMemo(() => {
+    const m = allMenus.find((x) => x.code === menuCode)
+    if (!m) return ''
+    const parent = allMenus.find((x) => x.code === m.parent_code)
+    return parent ? `${parent.name} / ${m.name}` : m.name
+  }, [allMenus, menuCode])
+
+  const lastSave = useMemo(() => {
+    const ts = list.map((f) => f.update_time || '').filter(Boolean).sort().pop()
+    return ts || ''
+  }, [list])
+
+  const handleTreeSelect = (keys: React.Key[]) => {
+    const k = keys[0] as string
+    if (!k) return
+    const m = allMenus.find((x) => x.code === k)
+    if (!m?.is_ledger) {
+      message.info('仅台账菜单支持字段配置，请选择带「台账」标记的菜单')
+      return
+    }
+    setMenuCode(k)
+  }
+
   const loadLedgers = useCallback(async () => {
     const res: any = await getMenus()
-    const lgs = res.filter((m: any) => m.is_ledger === 1)
-    setLedgers(lgs)
-    if (lgs.length && !menuCode) setMenuCode(lgs[0].code)
+    setAllMenus(res)
+    if (res.length && !menuCode) setMenuCode(res.find((m: any) => m.is_ledger === 1)?.code || '')
   }, [menuCode])
 
   useEffect(() => { loadLedgers() }, [loadLedgers])
@@ -341,14 +377,41 @@ export default function FieldsPage() {
   return (
     <div className="cw-page">
       <div className="cw-card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 className="cw-page-title">台账字段可视化配置</h2>
-          <Space>
-            <Select
-              placeholder="选择台账" style={{ width: 220 }} value={menuCode || undefined}
-              onChange={setMenuCode}
-              options={ledgers.map((l) => ({ label: l.name, value: l.code }))}
+        <h2 className="cw-page-title" style={{ marginBottom: 12 }}>台账字段可视化配置</h2>
+        <div style={{ display: 'flex', gap: 16 }}>
+          <div style={{ width: 300, flexShrink: 0, borderRight: '1px solid #f0f0f0', paddingRight: 16 }}>
+            <Input.Search
+              placeholder="搜索菜单" allowClear
+              onSearch={(v) => {
+                if (!v.trim()) { setExpandedKeys([]); return }
+                const hits = allMenus.filter((m) => m.name.includes(v.trim()) || (m.code || '').includes(v.trim()))
+                const parents = hits.map((m) => m.parent_code).filter((p) => allMenus.some((x) => x.code === p))
+                setExpandedKeys(Array.from(new Set([...hits.map((m) => m.code), ...parents])))
+              }}
             />
+            <div style={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto', marginTop: 8 }}>
+              <Tree
+                showIcon
+                defaultExpandAll
+                expandedKeys={expandedKeys.length ? expandedKeys : undefined}
+                onExpand={(keys) => setExpandedKeys(keys as string[])}
+                selectedKeys={menuCode ? [menuCode] : []}
+                onSelect={handleTreeSelect}
+                treeData={menuTree}
+                titleRender={(node: any) => node.is_ledger
+                  ? <span>{node.name}<Tag color="cyan" style={{ marginLeft: 6 }}>台账</Tag></span>
+                  : <span><FolderOutlined style={{ color: '#c9a86a' }} /> {node.name}</span>}
+              />
+            </div>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <Space wrap>
+            <b style={{ fontSize: 15 }}>{menuPath || '请选择台账菜单'}</b>
+            {lastSave && <span className="cw-muted">最近保存：{lastSave}</span>}
+          </Space>
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={loadFields}>刷新</Button>
             <Button icon={<ThunderboltOutlined />} onClick={() => {
               setSimpleOpen(true)
               simpleForm.resetFields()
@@ -474,6 +537,18 @@ export default function FieldsPage() {
             children: <Table rowKey="id" columns={recycleColumns} dataSource={recycle} pagination={false} />,
           }] : [])}
       />
+        {writable && (
+          <div style={{ textAlign: 'center', marginTop: 12 }}>
+            <Button type="dashed" icon={<PlusOutlined />} onClick={() => {
+              setModalState({ id: null })
+              setCodeSuggest('')
+              form.resetFields()
+              form.setFieldsValue({ show_in_list: true, show_in_form: true, is_required: false, data_type: 'text', format_type: '' })
+            }}>添加字段</Button>
+          </div>
+        )}
+        </div>
+        </div>
       </div>
 
       <Modal
