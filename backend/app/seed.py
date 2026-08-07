@@ -587,7 +587,8 @@ def init_db():
             data_type TEXT NOT NULL,
             form_component TEXT,
             options_json TEXT,
-            category TEXT
+            category TEXT,
+            default_visible INTEGER DEFAULT 1
         );
         CREATE TABLE IF NOT EXISTS sys_field_category (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -705,6 +706,13 @@ def init_db():
                         (cat, idx + 1, now))
 
     # ---------------- 预置字段库 ----------------
+    # 兼容旧库：补充 default_visible 列
+    try:
+        cols = [r["name"] for r in cur.execute("PRAGMA table_info(sys_field_library)")]
+        if "default_visible" not in cols:
+            cur.execute("ALTER TABLE sys_field_library ADD COLUMN default_visible INTEGER DEFAULT 1")
+    except Exception:
+        pass
     for f in FIELD_LIBRARY:
         cur.execute("SELECT COUNT(*) c FROM sys_field_library WHERE name=?", (f["name"],))
         if cur.fetchone()["c"] == 0:

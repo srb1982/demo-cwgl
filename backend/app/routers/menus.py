@@ -66,6 +66,16 @@ async def create_menu(body: MenuBody, user: dict = Depends(require_roles(ROLE_AD
         "INSERT INTO sys_menu_config(code,name,parent_code,sort_order,is_visible,is_ledger,table_name,path,create_time) VALUES(?,?,?,?,?,?,?,?,?)",
         (body.code, body.name, body.parent_code, body.sort_order, body.is_visible, body.is_ledger, body.table_name, body.path, now),
     )
+    # 台账类新菜单自动初始化字段配置：从字段库复制 default_visible=1 的系统字段
+    if body.is_ledger:
+        now2 = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        library = query_all("SELECT * FROM sys_field_library WHERE default_visible=1 ORDER BY id")
+        for idx, f in enumerate(library):
+            execute(
+                "INSERT INTO sys_field_config(menu_code,physical_field,display_label,data_type,form_component,is_system,show_in_list,show_in_form,is_required,sort_order,is_deleted,options_json,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (body.code, f["name"], f["label"], f["data_type"], f["form_component"],
+                 1, 1, 1, 0, idx + 1, 0, f["options_json"], now2, now2),
+            )
     log_operation(user, "新增菜单", "菜单配置", f"新增菜单 {body.code} {body.name}", get_client_ip(request))
     await notify_data_changed(module="menu")
     return {"message": "创建成功"}

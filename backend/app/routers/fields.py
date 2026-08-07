@@ -206,6 +206,7 @@ async def update_field(field_id: int, body: FieldBody, user: dict = Depends(requ
     if not f:
         raise HTTPException(status_code=404, detail="字段不存在")
     m = _menu_info(f["menu_code"])
+    body_data = body.model_dump(exclude_unset=True)
     # 系统内置字段：类型与编码锁定，禁止变更
     if f["is_system"] == 1 and body.data_type and body.data_type != f["data_type"]:
         raise HTTPException(status_code=400, detail="系统内置字段类型锁定保护，禁止变更")
@@ -215,16 +216,20 @@ async def update_field(field_id: int, body: FieldBody, user: dict = Depends(requ
         # 自定义字段类型修改：更新配置层与组件映射，物理列由 SQLite 动态类型兼容
         execute("UPDATE sys_field_config SET data_type=?,form_component=? WHERE id=?",
                 (body.data_type, VALID_COMPONENTS[body.data_type], field_id))
-    is_required = body.is_required if body.is_required is not None else f["is_required"]
-    show_in_form = body.show_in_form if body.show_in_form is not None else f["show_in_form"]
+    is_required = body_data.get('is_required', f['is_required'])
+    show_in_form = body_data.get('show_in_form', f['show_in_form'])
+    show_in_list = body_data.get('show_in_list', f['show_in_list'])
     # 必填字段不可隐藏（表单展示锁定）
     if is_required == 1 and show_in_form == 0:
         raise HTTPException(status_code=400, detail="必填字段不可在录入表单中隐藏")
+    # 必填字段不可在列表中隐藏（后端二次校验）
+    if is_required == 1 and 'show_in_list' in body_data and show_in_list == 0:
+        raise HTTPException(status_code=400, detail="必填字段不可在列表中隐藏")
     if body.props is not None and not isinstance(body.props, dict):
         raise HTTPException(status_code=400, detail="校验规则格式不合法")
     execute(
         "UPDATE sys_field_config SET display_label=?,show_in_list=?,show_in_form=?,is_required=?,sort_order=?,options_json=?,props_json=?,update_time=? WHERE id=?",
-        (body.display_label or f["display_label"], body.show_in_list, show_in_form, is_required,
+        (body.display_label or f["display_label"], show_in_list, show_in_form, is_required,
          body.sort_order if body.sort_order else f["sort_order"],
          dumps(body.options) if body.options is not None else f["options_json"],
          dumps(body.props) if body.props is not None else f["props_json"],

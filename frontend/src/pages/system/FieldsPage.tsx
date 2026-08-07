@@ -181,6 +181,19 @@ export default function FieldsPage() {
 
   const typeTag = (t: string) => <Tag color={typeColor[t]}>{typeName[t] || t}</Tag>
 
+  const toggleShow = (row: any, key: 'show_in_list' | 'show_in_form', checked: boolean) => {
+    if (row.is_required && !checked) {
+      message.warning(`字段[${row.display_label}]为业务必填项，不可隐藏`)
+      return
+    }
+    const prev = list.find(r => r.id === row.id)?.[key] ?? 0
+    setList(prevList => prevList.map(r => r.id === row.id ? { ...r, [key]: checked ? 1 : 0 } : r))
+    updateField(row.id, { [key]: checked ? 1 : 0 }).catch(() => {
+      message.error('切换失败，请重试')
+      setList(prevList => prevList.map(r => r.id === row.id ? { ...r, [key]: prev } : r))
+    })
+  }
+
   const manageCols: any[] = writable ? [
     {
       title: '排序', width: 130, render: (_: any, __: any, i: number) => (
@@ -246,11 +259,17 @@ export default function FieldsPage() {
     },
     {
       title: '列表显示', dataIndex: 'show_in_list', width: 90,
-      render: (v: number) => v ? <Tag color="success">显示</Tag> : <Tag>隐藏</Tag>,
+      render: (v: number, row: any) => (
+        <Switch size="small" checked={!!v} disabled={!writable}
+          onChange={(checked) => toggleShow(row, 'show_in_list', checked)} />
+      ),
     },
     {
       title: '表单显示', dataIndex: 'show_in_form', width: 90,
-      render: (v: number) => v ? <Tag color="success">显示</Tag> : <Tag>隐藏</Tag>,
+      render: (v: number, row: any) => (
+        <Switch size="small" checked={!!v} disabled={!writable}
+          onChange={(checked) => toggleShow(row, 'show_in_form', checked)} />
+      ),
     },
     { title: '必填', dataIndex: 'is_required', width: 70, render: (v: number) => (v ? <Tag color="red">必填</Tag> : '—') },
     ...manageCols,
