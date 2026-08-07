@@ -11,6 +11,7 @@ import {
   getMenus, getFields, getRecycleFields, createField, updateField, deleteField, restoreField,
   sortFields, getFieldLibrary, getFieldLibraryCategories, createSimpleField, fieldCodeSuggest,
 } from '../../api'
+import { isWritable } from '../../store/auth'
 
 const typeName: Record<string, string> = {
   text: '文本', number: '数字', date: '日期', datetime: '日期时间', image: '图片',
@@ -40,6 +41,7 @@ const formatOptions = [
 
 export default function FieldsPage() {
   const { message, modal } = App.useApp()
+  const writable = isWritable()
   const [ledgers, setLedgers] = useState<any[]>([])
   const [menuCode, setMenuCode] = useState('')
   const [list, setList] = useState<any[]>([])
@@ -55,6 +57,7 @@ export default function FieldsPage() {
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [category, setCategory] = useState('')
   const [categories, setCategories] = useState<string[]>([])
+  const [libType, setLibType] = useState('')
   const [libKeyword, setLibKeyword] = useState('')
   const [libSelected, setLibSelected] = useState<number[]>([])
 
@@ -138,11 +141,21 @@ export default function FieldsPage() {
       display_label: values.display_label,
       data_type: values.data_type,
       options: values.data_type === 'select' && values.options ? values.options.split(/[,，]/).map((s: string) => s.trim()).filter(Boolean) : null,
+      code: values.code,
+      tips: values.tips,
     })
     message.success(`字段创建成功，编码 ${res.physical_field} 已自动生成`)
     setSimpleOpen(false)
     simpleForm.resetFields()
     loadFields()
+  }
+
+  const genSimpleCode = async (v: string) => {
+    if (!v || !v.trim()) return
+    try {
+      const res: any = await fieldCodeSuggest(menuCode, v.trim())
+      simpleForm.setFieldValue('code', res.suggest)
+    } catch { /* ignore */ }
   }
 
   const onLabelChange = async (v: string) => {
@@ -158,41 +171,7 @@ export default function FieldsPage() {
 
   const typeTag = (t: string) => <Tag color={typeColor[t]}>{typeName[t] || t}</Tag>
 
-  const columns = [
-    {
-      title: '序号', width: 60, render: (_: any, __: any, i: number) => (
-        <span draggable onDragStart={(e) => { setDragIndex(i); e.dataTransfer.effectAllowed = 'move' }}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={() => {
-            if (dragIndex === null || dragIndex === i) return
-            const next = [...list]
-            const [it] = next.splice(dragIndex, 1)
-            next.splice(i, 0, it)
-            setList(next)
-            setDragIndex(null)
-            persistSort(next)
-          }}
-          style={{ cursor: 'grab', userSelect: 'none' }}
-          title="按住拖动排序"
-        >☰</span>
-      ),
-    },
-    { title: '字段显示名', dataIndex: 'display_label', width: 160 },
-    { title: '字段编码', dataIndex: 'physical_field', width: 130, render: (v: string) => <code>{v}</code> },
-    { title: '类型', dataIndex: 'data_type', width: 110, render: (v: string) => typeTag(v) },
-    {
-      title: '来源', dataIndex: 'is_system', width: 90,
-      render: (v: number) => v ? <Tag icon={<LockOutlined />} color="gold">系统内置</Tag> : <Tag color="cyan">自定义</Tag>,
-    },
-    {
-      title: '列表显示', dataIndex: 'show_in_list', width: 90,
-      render: (v: number) => v ? <Tag color="success">显示</Tag> : <Tag>隐藏</Tag>,
-    },
-    {
-      title: '表单显示', dataIndex: 'show_in_form', width: 90,
-      render: (v: number) => v ? <Tag color="success">显示</Tag> : <Tag>隐藏</Tag>,
-    },
-    { title: '必填', dataIndex: 'is_required', width: 70, render: (v: number) => (v ? <Tag color="red">必填</Tag> : '—') },
+  const manageCols: any[] = writable ? [
     {
       title: '排序', width: 130, render: (_: any, __: any, i: number) => (
         <Space>
@@ -224,6 +203,46 @@ export default function FieldsPage() {
         </Space>
       ),
     },
+  ] : []
+
+  const columns = [
+    {
+      title: '序号', width: 60, render: (_: any, __: any, i: number) => (
+        <span
+          draggable={writable}
+          onDragStart={(e) => { if (writable) { setDragIndex(i); e.dataTransfer.effectAllowed = 'move' } }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={() => {
+            if (!writable || dragIndex === null || dragIndex === i) return
+            const next = [...list]
+            const [it] = next.splice(dragIndex, 1)
+            next.splice(i, 0, it)
+            setList(next)
+            setDragIndex(null)
+            persistSort(next)
+          }}
+          style={{ cursor: writable ? 'grab' : 'default', userSelect: 'none' }}
+          title={writable ? '按住拖动排序' : undefined}
+        >☰</span>
+      ),
+    },
+    { title: '字段显示名', dataIndex: 'display_label', width: 160 },
+    { title: '字段编码', dataIndex: 'physical_field', width: 130, render: (v: string) => <code>{v}</code> },
+    { title: '类型', dataIndex: 'data_type', width: 110, render: (v: string) => typeTag(v) },
+    {
+      title: '来源', dataIndex: 'is_system', width: 90,
+      render: (v: number) => v ? <Tag icon={<LockOutlined />} color="gold">系统内置</Tag> : <Tag color="cyan">自定义</Tag>,
+    },
+    {
+      title: '列表显示', dataIndex: 'show_in_list', width: 90,
+      render: (v: number) => v ? <Tag color="success">显示</Tag> : <Tag>隐藏</Tag>,
+    },
+    {
+      title: '表单显示', dataIndex: 'show_in_form', width: 90,
+      render: (v: number) => v ? <Tag color="success">显示</Tag> : <Tag>隐藏</Tag>,
+    },
+    { title: '必填', dataIndex: 'is_required', width: 70, render: (v: number) => (v ? <Tag color="red">必填</Tag> : '—') },
+    ...manageCols,
   ]
 
   const recycleColumns = [
@@ -276,6 +295,7 @@ export default function FieldsPage() {
 
   const filteredLib = library.filter((item) => {
     if (category && item.category !== category) return false
+    if (libType && item.data_type !== libType) return false
     if (libKeyword && !`${item.label} ${item.name}`.includes(libKeyword)) return false
     return true
   })
@@ -298,13 +318,15 @@ export default function FieldsPage() {
               setSimpleOpen(true)
               simpleForm.resetFields()
               simpleForm.setFieldsValue({ data_type: 'text' })
-            }}>简化添加</Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => {
-              setModalState({ id: null })
-              setCodeSuggest('')
-              form.resetFields()
-              form.setFieldsValue({ show_in_list: true, show_in_form: true, is_required: false, data_type: 'text', format_type: '' })
-            }}>新增自定义字段</Button>
+            }}>{writable ? '简化添加' : '创建自定义字段'}</Button>
+            {writable && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => {
+                setModalState({ id: null })
+                setCodeSuggest('')
+                form.resetFields()
+                form.setFieldsValue({ show_in_list: true, show_in_form: true, is_required: false, data_type: 'text', format_type: '' })
+              }}>新增自定义字段</Button>
+            )}
           </Space>
         </div>
 
@@ -333,18 +355,30 @@ export default function FieldsPage() {
                       onChange={setCategory}
                       options={categories.map((c) => ({ label: c, value: c }))}
                     />
+                    <Select
+                      placeholder="按类型筛选" style={{ width: 150 }} allowClear value={libType || undefined}
+                      onChange={setLibType}
+                      options={typeOptions}
+                    />
                     <Input.Search
                       placeholder="搜索字段名称" allowClear style={{ width: 220 }}
                       onSearch={setLibKeyword} onChange={(e) => setLibKeyword(e.target.value)}
                     />
-                    <Button
-                      type="primary" icon={<CheckOutlined />} disabled={!libSelected.length}
-                      onClick={batchAddFromLibrary}
-                    >
-                      批量添加已选（{libSelected.length}）
-                    </Button>
-                    {libSelected.length > 0 && (
-                      <Button onClick={() => setLibSelected([])}>清空选择</Button>
+                    {writable && (
+                      <>
+                        <Button
+                          type="primary" icon={<CheckOutlined />} disabled={!libSelected.length}
+                          onClick={batchAddFromLibrary}
+                        >
+                          批量添加已选（{libSelected.length}）
+                        </Button>
+                        {libSelected.length > 0 && (
+                          <Button onClick={() => setLibSelected([])}>清空选择</Button>
+                        )}
+                      </>
+                    )}
+                    {!writable && (
+                      <span className="cw-muted">只读模式：可浏览字段库，添加字段请使用「创建自定义字段」</span>
                     )}
                   </Space>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
@@ -353,22 +387,24 @@ export default function FieldsPage() {
                         key={item.id}
                         className="cw-card"
                         style={{
-                          marginBottom: 0, cursor: 'pointer', position: 'relative',
+                          marginBottom: 0, cursor: writable ? 'pointer' : 'default', position: 'relative',
                           borderColor: libSelected.includes(item.id) ? '#c9a86a' : undefined,
                           boxShadow: libSelected.includes(item.id) ? '0 0 0 2px rgba(201,168,106,.25)' : undefined,
                         }}
-                        onClick={() => addFromLibrary(item)}
+                        onClick={() => { if (writable) addFromLibrary(item) }}
                       >
-                        <Checkbox
-                          style={{ position: 'absolute', top: 8, right: 8 }}
-                          checked={libSelected.includes(item.id)}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            setLibSelected((prev) => e.target.checked
-                              ? [...prev, item.id]
-                              : prev.filter((x) => x !== item.id))
-                          }}
-                        />
+                        {writable && (
+                          <Checkbox
+                            style={{ position: 'absolute', top: 8, right: 8 }}
+                            checked={libSelected.includes(item.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              setLibSelected((prev) => e.target.checked
+                                ? [...prev, item.id]
+                                : prev.filter((x) => x !== item.id))
+                            }}
+                          />
+                        )}
                         <Space>
                           <DatabaseOutlined style={{ color: '#c9a86a' }} />
                           <b>{item.label}</b>
@@ -377,7 +413,7 @@ export default function FieldsPage() {
                         {item.category && <Tag style={{ marginTop: 6 }} color="geekblue">{item.category}</Tag>}
                         <div className="cw-muted" style={{ marginTop: 6 }}>
                           <span style={{ marginRight: 12 }}>编码 {item.name}</span>
-                          <span>点击单条添加，勾选可批量添加</span>
+                          {writable ? <span>点击单条添加，勾选可批量添加</span> : <span>字段库预置字段</span>}
                         </div>
                       </div>
                     ))}
@@ -385,13 +421,12 @@ export default function FieldsPage() {
                 </div>
               ),
             },
-            {
-              key: 'recycle',
-              label: `字段回收站（${recycle.length}）`,
-              children: <Table rowKey="id" columns={recycleColumns} dataSource={recycle} pagination={false} />,
-            },
-          ]}
-        />
+          ].concat(writable ? [{
+            key: 'recycle',
+            label: `字段回收站（${recycle.length}）`,
+            children: <Table rowKey="id" columns={recycleColumns} dataSource={recycle} pagination={false} />,
+          }] : [])}
+      />
       </div>
 
       <Modal
@@ -452,7 +487,12 @@ export default function FieldsPage() {
             valuePropName="checked"
             extra="必填字段不可在录入表单中隐藏"
           >
-            <Switch disabled={!!form.getFieldValue('is_required')} />
+            <Switch onChange={(checked) => {
+              if (!checked && form.getFieldValue('is_required')) {
+                message.warning('该字段为业务必填项，不可在录入表单中隐藏')
+                form.setFieldValue('show_in_form', true)
+              }
+            }} />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(a, b) => a.is_required !== b.is_required}>
             {() => (
@@ -471,13 +511,13 @@ export default function FieldsPage() {
         open={simpleOpen}
         onCancel={() => setSimpleOpen(false)}
         onOk={submitSimple}
-        width={460}
+        width={480}
       >
         <Alert type="info" showIcon style={{ marginBottom: 12 }}
           message="只需填写显示名称与类型，系统自动生成英文字段编码并追加到末尾。" />
         <Form form={simpleForm} layout="vertical" style={{ marginTop: 8 }}>
           <Form.Item name="display_label" label="字段显示名称" rules={[{ required: true, message: '请输入显示名称' }]}>
-            <Input placeholder="如 婚姻状况" />
+            <Input placeholder="如 婚姻状况" onChange={(e) => genSimpleCode(e.target.value)} />
           </Form.Item>
           <Form.Item name="data_type" label="字段类型" rules={[{ required: true }]}>
             <Select options={typeOptions} />
@@ -488,6 +528,23 @@ export default function FieldsPage() {
                 <Input placeholder="如 未婚,已婚,离异,丧偶" />
               </Form.Item>
             )}
+          </Form.Item>
+          <Form.Item name="tips" label="字段描述（填写说明）">
+            <Input placeholder="选填，显示在表单下方" />
+          </Form.Item>
+          <Form.Item
+            name="code"
+            label="字段编码"
+            extra="由显示名称自动生成拼音编码，可在创建前手动修改（仅小写字母/数字/下划线，以字母开头）"
+          >
+            <Input
+              placeholder="创建时自动生成"
+              addonAfter={
+                <Button type="link" size="small" style={{ padding: 0 }} onClick={() => genSimpleCode(simpleForm.getFieldValue('display_label'))}>
+                  刷新
+                </Button>
+              }
+            />
           </Form.Item>
         </Form>
       </Modal>

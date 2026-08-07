@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from ..auth import get_current_user, require_roles, get_client_ip
-from ..config import ROLE_ADMIN
+from ..config import ROLE_ADMIN, ROLE_MANAGER
 from ..database import get_db, query_all, query_one, execute, dumps, loads, ensure_column, SQLITE_TYPE_MAP
 from ..services.audit import log_operation
 from ..services.sync import notify_data_changed
@@ -79,6 +79,8 @@ class SimpleFieldBody(BaseModel):
     display_label: str = None
     data_type: str = None
     options: list = None
+    code: str = None
+    tips: str = None
 
 
 def _menu_info(menu_code):
@@ -127,14 +129,14 @@ def list_fields(menu_code: str, user: dict = Depends(get_current_user)):
 
 
 @router.get("/{menu_code}/recycle")
-def recycle_fields(menu_code: str, user: dict = Depends(require_roles(ROLE_ADMIN))):
+def recycle_fields(menu_code: str, user: dict = Depends(require_roles(ROLE_ADMIN, ROLE_MANAGER))):
     _menu_info(menu_code)
     rows = query_all("SELECT * FROM sys_field_config WHERE menu_code=? AND is_deleted=1 ORDER BY id DESC", (menu_code,))
     return [_fmt(r) for r in rows]
 
 
 @router.post("/{menu_code}")
-async def create_field(menu_code: str, body: FieldBody, user: dict = Depends(require_roles(ROLE_ADMIN)), request: Request = None):
+async def create_field(menu_code: str, body: FieldBody, user: dict = Depends(require_roles(ROLE_ADMIN, ROLE_MANAGER)), request: Request = None):
     m = _menu_info(menu_code)
     if not body.display_label:
         raise HTTPException(status_code=400, detail="字段名称必填")
@@ -154,7 +156,7 @@ async def create_field(menu_code: str, body: FieldBody, user: dict = Depends(req
 
 @router.post("/{menu_code}/simple")
 async def create_simple_field(menu_code: str, body: SimpleFieldBody,
-                              user: dict = Depends(require_roles(ROLE_ADMIN)), request: Request = None):
+                              user: dict = Depends(get_current_user), request: Request = None):
     """简化模式：仅填显示名称+类型，系统自动生成英文编码与排序号"""
     m = _menu_info(menu_code)
     if not body.display_label:
@@ -164,9 +166,19 @@ async def create_simple_field(menu_code: str, body: SimpleFieldBody,
     max_row = query_one("SELECT MAX(sort_order) s FROM sys_field_config WHERE menu_code=? AND is_deleted=0", (menu_code,))
     sort = (max_row["s"] or 0) + 1
     seq = query_one("SELECT COUNT(*) c FROM sys_field_config WHERE menu_code=?", (menu_code,))["c"] + 1
-    physical = _unique_code(menu_code, _pinyin_code(body.display_label)) or f"ext_{seq}"
+    manual = (body.code or "").strip().lower()
+    if manual:
+        if not re.fullmatch(r"[a-z][a-z0-9_]{1,63}", manual):
+            raise HTTPException(status_code=400, detail="字段编码仅支持小写字母、数字、下划线，以字母开头，长度2-64")
+        if query_one("SELECT id FROM sys_field_config WHERE menu_code=? AND physical_field=? AND is_deleted=0",
+                     (menu_code, manual)):
+            raise HTTPException(status_code=400, detail="字段编码已存在，请更换")
+        physical = manual
+    else:
+        physical = _unique_code(menu_code, _pinyin_code(body.display_label)) or f"ext_{seq}"
+    props = {"tips": body.tips} if body.tips else None
     _create_field_impl(menu_code, m["table_name"], body.display_label, body.data_type, body.options,
-                       1, 1, 0, sort, physical, None)
+                       1, 1, 0, sort, physical, props)
     log_operation(user, "新增字段", "字段配置", f"台账[{m['name']}]简化新增字段 {body.display_label}（{physical}）", get_client_ip(request))
     await notify_data_changed(menu_code, "field")
     return {"message": "字段创建成功", "physical_field": physical}
@@ -183,7 +195,7 @@ def field_code_suggest(menu_code: str, label: str = "", user: dict = Depends(get
 
 
 @router.put("/{field_id}")
-async def update_field(field_id: int, body: FieldBody, user: dict = Depends(require_roles(ROLE_ADMIN)), request: Request = None):
+async def update_field(field_id: int, body: FieldBody, user: dict = Depends(require_roles(ROLE_ADMIN, ROLE_MANAGER)), request: Request = None):
     f = query_one("SELECT * FROM sys_field_config WHERE id=?", (field_id,))
     if not f:
         raise HTTPException(status_code=404, detail="字段不存在")
@@ -212,7 +224,7 @@ async def update_field(field_id: int, body: FieldBody, user: dict = Depends(requ
 
 
 @router.delete("/{field_id}")
-async def delete_field(field_id: int, user: dict = Depends(require_roles(ROLE_ADMIN)), request: Request = None):
+async def delete_field(field_id: int, user: dict = Depends(require_roles(ROLE_ADMIN, ROLE_MANAGER)), request: Request = None):
     f = query_one("SELECT * FROM sys_field_config WHERE id=?", (field_id,))
     if not f:
         raise HTTPException(status_code=404, detail="字段不存在")
@@ -229,7 +241,7 @@ async def delete_field(field_id: int, user: dict = Depends(require_roles(ROLE_AD
 
 
 @router.post("/{field_id}/restore")
-async def restore_field(field_id: int, user: dict = Depends(require_roles(ROLE_ADMIN)), request: Request = None):
+async def restore_field(field_id: int, user: dict = Depends(require_roles(ROLE_ADMIN, ROLE_MANAGER)), request: Request = None):
     f = query_one("SELECT * FROM sys_field_config WHERE id=?", (field_id,))
     if not f:
         raise HTTPException(status_code=404, detail="字段不存在")
@@ -244,7 +256,7 @@ class SortBody(BaseModel):
 
 
 @router.post("/{menu_code}/sort")
-async def sort_fields(menu_code: str, body: SortBody, user: dict = Depends(require_roles(ROLE_ADMIN)), request: Request = None):
+async def sort_fields(menu_code: str, body: SortBody, user: dict = Depends(require_roles(ROLE_ADMIN, ROLE_MANAGER)), request: Request = None):
     _menu_info(menu_code)
     with get_db() as db:
         for idx, fid in enumerate(body.order):
@@ -255,16 +267,21 @@ async def sort_fields(menu_code: str, body: SortBody, user: dict = Depends(requi
 
 
 @router.get("/library/list")
-def field_library(category: str = "", keyword: str = "", user: dict = Depends(require_roles(ROLE_ADMIN))):
+def field_library(category: str = "", keyword: str = "", field_type: str = "",
+                  user: dict = Depends(get_current_user)):
     sql = "SELECT * FROM sys_field_library"
-    params = []
+    where, params = [], []
     if category:
-        sql += " WHERE category=?"
+        where.append("category=?")
         params.append(category)
     if keyword:
-        sql += " AND" if category else " WHERE"
-        sql += " (label LIKE ? OR name LIKE ?)"
+        where.append("(label LIKE ? OR name LIKE ?)")
         params += [f"%{keyword}%", f"%{keyword}%"]
+    if field_type:
+        where.append("data_type=?")
+        params.append(field_type)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
     rows = query_all(sql + " ORDER BY id", params)
     return [{"id": r["id"], "name": r["name"], "label": r["label"], "data_type": r["data_type"],
              "form_component": r["form_component"], "options": loads(r["options_json"], []),
@@ -272,6 +289,6 @@ def field_library(category: str = "", keyword: str = "", user: dict = Depends(re
 
 
 @router.get("/library/categories")
-def field_library_categories(user: dict = Depends(require_roles(ROLE_ADMIN))):
+def field_library_categories(user: dict = Depends(get_current_user)):
     rows = query_all("SELECT DISTINCT category FROM sys_field_library WHERE category IS NOT NULL AND category!=''")
     return [r["category"] for r in rows]

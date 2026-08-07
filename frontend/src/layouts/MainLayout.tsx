@@ -128,18 +128,18 @@ export default function MainLayout() {
         label: p.name,
       })
     }
-    if (isAdmin) {
-      const sysChildren = menus
-        .filter((m: any) => m.parent_code === 'system' && m.is_visible)
-        .map((m: any) => ({
-          key: `page:${m.code}`,
-          icon: PAGE_ICONS[m.code],
-          label: m.name,
-        }))
+    const sysChildren = menus
+      .filter((m: any) => m.parent_code === 'system' && m.is_visible && (isAdmin || m.code === 'sys_field'))
+      .map((m: any) => ({
+        key: `page:${m.code}`,
+        icon: PAGE_ICONS[m.code],
+        label: m.name,
+      }))
+    if (sysChildren.length) {
       items.push({
         key: 'group:system',
         icon: <SettingOutlined />,
-        label: '系统管理',
+        label: isAdmin ? '系统管理' : '字段配置',
         children: sysChildren,
       })
     }
