@@ -559,21 +559,13 @@ export default function FieldsPage() {
         width={560}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
-          {isSystem && (
-            <Alert type="warning" showIcon style={{ marginBottom: 12 }}
-              message="系统内置字段：字段类型与编码锁定保护，仅可调整显示名称、展示与校验规则。" />
-          )}
+          <Alert type={isSystem ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
+            message={isSystem
+              ? '字段来源：系统内置字段 · 不可删除（字段类型与编码锁定保护）'
+              : `字段来源：自定义字段 · 可删除${modalState?.id ? ' · 修改类型前请留意兼容性提示' : ''}`} />
           <Form.Item name="display_label" label="字段显示名称" rules={[{ required: true, message: '请输入显示名称' }]}>
             <Input placeholder="如 文化程度" onChange={(e) => onLabelChange(e.target.value)} />
           </Form.Item>
-          {isSystem && (
-            <Alert type="warning" showIcon style={{ marginBottom: 12 }}
-              message="系统内置字段：字段类型与编码锁定保护，仅可调整显示名称、展示与校验规则。" />
-          )}
-          {!isSystem && modalState?.id && codeSuggest && (
-            <Alert type="info" showIcon style={{ marginBottom: 12 }}
-              message={<>自动生成字段编码：<code>{codeSuggest}</code></>} />
-          )}
           <Form.Item name="data_type" label="字段类型" rules={[{ required: true }]}>
             <Select
               disabled={isSystem}
@@ -586,14 +578,6 @@ export default function FieldsPage() {
             <Alert type="warning" showIcon style={{ marginBottom: 12 }}
               message="修改字段类型后，已有历史数据将以新类型展示（部分数据可能无法正确解析），请谨慎操作。" />
           )}
-          <Form.Item name="data_type" label="字段类型" rules={[{ required: true }]}>
-            <Select
-              disabled={isSystem}
-              options={typeOptions}
-              optionRender={(opt) => typeSelectRender(opt)}
-              onChange={() => { if (form.getFieldValue('data_type') !== 'select') form.setFieldValue('options', undefined) }}
-            />
-          </Form.Item>
           {!modalState?.id && codeSuggest && (
             <Alert type="info" showIcon style={{ marginBottom: 12 }}
               message={<>自动生成字段编码：<code>{codeSuggest}</code></>} />
