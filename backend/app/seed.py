@@ -577,6 +577,7 @@ def init_db():
             sort_order INTEGER DEFAULT 0,
             is_deleted INTEGER DEFAULT 0,
             options_json TEXT,
+            props_json TEXT,
             create_time TEXT,
             update_time TEXT
         );
@@ -740,6 +741,20 @@ def init_db():
             "INSERT INTO sys_user(username,password_hash,salt,real_name,role,phone,status,create_time) VALUES(?,?,?,?,?,?,?,?)",
             ("admin", hash_password("admin123", salt), salt, "系统管理员", config.ROLE_ADMIN, "", 1, now),
         )
+
+    # ---------------- 预置管理员与只读用户 ----------------
+    preset_users = [
+        ("mgr1", "123456", "普通管理员", config.ROLE_MANAGER),
+        ("reader1", "123456", "只读用户", config.ROLE_VIEWER),
+    ]
+    for username, pwd, real_name, role in preset_users:
+        cur.execute("SELECT COUNT(*) c FROM sys_user WHERE username=?", (username,))
+        if cur.fetchone()["c"] == 0:
+            salt = os.urandom(8).hex()
+            cur.execute(
+                "INSERT INTO sys_user(username,password_hash,salt,real_name,role,phone,status,create_time) VALUES(?,?,?,?,?,?,?,?)",
+                (username, hash_password(pwd, salt), salt, real_name, role, "", 1, now),
+            )
 
     # ---------------- 系统参数 ----------------
     defaults = [

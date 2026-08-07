@@ -81,6 +81,7 @@ class SimpleFieldBody(BaseModel):
     options: list = None
     code: str = None
     tips: str = None
+    props: dict = None
 
 
 def _menu_info(menu_code):
@@ -182,7 +183,10 @@ async def create_simple_field(menu_code: str, body: SimpleFieldBody,
         physical = manual
     else:
         physical = _unique_code(menu_code, _pinyin_code(body.display_label)) or f"ext_{seq}"
-    props = {"tips": body.tips} if body.tips else None
+    props = {"tips": body.tips} if body.tips else {}
+    if body.props:
+        props.update(body.props)
+    props = props or None
     _create_field_impl(menu_code, m["table_name"], body.display_label, body.data_type, body.options,
                        1, 1, 0, sort, physical, props)
     log_operation(user, "新增字段", "字段配置", f"台账[{m['name']}]简化新增字段 {body.display_label}（{physical}）", get_client_ip(request))
