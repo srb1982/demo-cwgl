@@ -51,3 +51,10 @@ Entries discovered by the Agent during task execution should follow this format:
 - Instructions:
   - 后端集成测试：`cd backend && python3 -m pytest tests/ -v`；依赖 pytest 与 httpx（已全局安装）。测试通过 conftest.py 自动切换到临时隔离 SQLite 库并执行 seed 初始化，不触碰生产 data/village.db；覆盖字段模块权限矩阵、必填保护、系统字段锁定、防重、编码生成、分类管理、回收站、排序、新台账自动初始化等 29 项断言。新增后端改动后跑一遍该套件可快速回归。
   - 后端新增依赖一律 `pip install --break-system-packages <pkg>`（系统 Python 无 venv）。
+
+[Project Knowledge Summary]
+- Date: 2026-08-08
+- Context: Discovered by Agent while 为字段配置模块补充前端单元测试
+- Category: Testing Methods
+- Instructions:
+  - 前端单元测试：`cd frontend && npm test`（vitest run，node 环境，vite.config.ts 的 test 段配置）。字段校验纯逻辑集中在 src/utils/fieldValidation.ts（buildRules/formatPatterns），对应 src/utils/fieldValidation.test.ts 12 例。新增前端改动后跑该套件与 `npx tsc --noEmit` 回归。
