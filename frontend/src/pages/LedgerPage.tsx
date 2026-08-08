@@ -18,6 +18,7 @@ import { subscribeDataChanged } from '../socket'
 import { buildRules } from '../utils/fieldValidation'
 import { typeColor } from '../utils/fieldMeta'
 import { isImageUrl, extractFileName, formatNumber, truncateText } from '../utils/fieldRender'
+import { buildLedgerPayload } from '../utils/ledgerPayload'
 
 export default function LedgerPage() {
   const { code } = useParams()
@@ -213,20 +214,7 @@ export default function LedgerPage() {
 
   const handleSubmit = async () => {
     const values = await form.validateFields()
-    const payload: any = {}
-    for (const f of formFields) {
-      const v = values[f.physical_field]
-      if (v === undefined) continue
-      if (f.data_type === 'date') {
-        payload[f.physical_field] = dayjs(v).format('YYYY-MM-DD')
-      } else if (f.data_type === 'datetime') {
-        payload[f.physical_field] = dayjs(v).format('YYYY-MM-DD HH:mm:ss')
-      } else if (f.data_type === 'boolean') {
-        payload[f.physical_field] = v ? 1 : 0
-      } else {
-        payload[f.physical_field] = v
-      }
-    }
+    const payload = buildLedgerPayload(formFields, values)
     if (editing?.id) {
       await updateLedgerItem(code!, editing.id, payload)
       message.success('修改成功')
