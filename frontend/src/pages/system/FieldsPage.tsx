@@ -15,6 +15,7 @@ import {
 } from '../../api'
 import { isWritable, isAdmin } from '../../store/auth'
 import { typeName, typeColor, typeOptions, formatOptions } from '../../utils/fieldMeta'
+import { buildMenuTree, getMenuPath } from '../../utils/menuTree'
 
 const typeSelectRender = (t: any) => (
   <div>
@@ -50,24 +51,9 @@ export default function FieldsPage() {
   const [catName, setCatName] = useState('')
   const currentLabels = useMemo(() => new Set(list.map((f) => f.display_label)), [list])
 
-  const menuTree = useMemo(() => {
-    const map = new Map<string, any>()
-    allMenus.forEach((m) => map.set(m.code, { ...m, key: m.code, children: [] }))
-    const roots: any[] = []
-    allMenus.forEach((m) => {
-      const node = map.get(m.code)!
-      if (m.parent_code && map.has(m.parent_code)) map.get(m.parent_code).children.push(node)
-      else roots.push(node)
-    })
-    return roots
-  }, [allMenus])
+  const menuTree = useMemo(() => buildMenuTree(allMenus), [allMenus])
 
-  const menuPath = useMemo(() => {
-    const m = allMenus.find((x) => x.code === menuCode)
-    if (!m) return ''
-    const parent = allMenus.find((x) => x.code === m.parent_code)
-    return parent ? `${parent.name} / ${m.name}` : m.name
-  }, [allMenus, menuCode])
+  const menuPath = useMemo(() => getMenuPath(allMenus, menuCode), [allMenus, menuCode])
 
   const lastSave = useMemo(() => {
     const ts = list.map((f) => f.update_time || '').filter(Boolean).sort().pop()
