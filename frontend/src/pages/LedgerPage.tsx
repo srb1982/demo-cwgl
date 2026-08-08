@@ -16,11 +16,7 @@ import {
 import { isWritable } from '../store/auth'
 import { subscribeDataChanged } from '../socket'
 import { buildRules } from '../utils/fieldValidation'
-
-const typeTagColor: Record<string, string> = {
-  text: 'default', select: 'blue', number: 'purple', date: 'green', datetime: 'green',
-  image: 'orange', boolean: 'gold', textarea: 'default',
-}
+import { typeColor } from '../utils/fieldMeta'
 
 export default function LedgerPage() {
   const { code } = useParams()
@@ -103,7 +99,7 @@ export default function LedgerPage() {
       return <a href={val} target="_blank" rel="noreferrer" title={fname}>{fname.slice(0, 12)}</a>
     }
     if (field.data_type === 'select') {
-      return <Tag color={typeTagColor.select}>{val || '-'}</Tag>
+      return <Tag color={typeColor.select}>{val || '-'}</Tag>
     }
     if (field.data_type === 'boolean') {
       return val ? <Tag color="green">是</Tag> : <Tag>否</Tag>
