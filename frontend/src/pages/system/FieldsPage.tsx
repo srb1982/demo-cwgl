@@ -39,6 +39,7 @@ export default function FieldsPage() {
   const [simpleOpen, setSimpleOpen] = useState(false)
   const [simpleForm] = Form.useForm()
   const [codeSuggest, setCodeSuggest] = useState('')
+  const [codeDup, setCodeDup] = useState(false)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [category, setCategory] = useState('')
   const [categories, setCategories] = useState<string[]>([])
@@ -97,7 +98,7 @@ export default function FieldsPage() {
     setLoading(true)
     try {
       const [f, r, lib, cats]: any = await Promise.all([
-        getFields(menuCode), getRecycleFields(menuCode), getFieldLibrary(), getFieldLibraryCategories(),
+        getFields(menuCode), getRecycleFields(menuCode), getFieldLibrary(menuCode), getFieldLibraryCategories(),
       ])
       setList(f)
       setRecycle(r)
@@ -196,10 +197,12 @@ export default function FieldsPage() {
       try {
         const res: any = await fieldCodeSuggest(menuCode, v.trim())
         setCodeSuggest(res.suggest)
+        setCodeDup(!!res.is_duplicate)
         return
       } catch { /* ignore */ }
     }
     setCodeSuggest('')
+    setCodeDup(false)
   }
 
   const typeTag = (t: string) => <Tag color={typeColor[t]}>{typeName[t] || t}</Tag>
@@ -409,6 +412,7 @@ export default function FieldsPage() {
               <Button type="primary" icon={<PlusOutlined />} onClick={() => {
                 setModalState({ id: null })
                 setCodeSuggest('')
+                setCodeDup(false)
                 form.resetFields()
                 form.setFieldsValue({ show_in_list: true, show_in_form: true, is_required: false, data_type: 'text', format_type: '' })
               }}>新增自定义字段</Button>
@@ -535,6 +539,7 @@ export default function FieldsPage() {
             <Button type="dashed" icon={<PlusOutlined />} onClick={() => {
               setModalState({ id: null })
               setCodeSuggest('')
+              setCodeDup(false)
               form.resetFields()
               form.setFieldsValue({ show_in_list: true, show_in_form: true, is_required: false, data_type: 'text', format_type: '' })
             }}>添加字段</Button>
@@ -572,8 +577,9 @@ export default function FieldsPage() {
               message="修改字段类型后，已有历史数据将以新类型展示（部分数据可能无法正确解析），请谨慎操作。" />
           )}
           {!modalState?.id && codeSuggest && (
-            <Alert type="info" showIcon style={{ marginBottom: 12 }}
-              message={<>自动生成字段编码：<code>{codeSuggest}</code></>} />
+            <Alert type={codeDup ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
+              message={codeDup ? <>自动生成字段编码：<code>{codeSuggest}</code>（原始编码已被占用，已自动追加序号）</>
+                : <>自动生成字段编码：<code>{codeSuggest}</code></>} />
           )}
           <Form.Item noStyle shouldUpdate={(a, b) => a.data_type !== b.data_type}>
             {() => form.getFieldValue('data_type') === 'select' && (

@@ -201,8 +201,12 @@ def field_code_suggest(menu_code: str, label: str = "", user: dict = Depends(get
     _menu_info(menu_code)
     base = _pinyin_code(label) if label else None
     if not base:
-        return {"suggest": "", "note": "无法自动生成英文编码，将使用编号方案"}
-    return {"suggest": _unique_code(menu_code, base)}
+        return {"suggest": "", "note": "无法自动生成英文编码，将使用编号方案", "is_duplicate": False}
+    exist = {r["physical_field"] for r in query_all(
+        "SELECT physical_field FROM sys_field_config WHERE menu_code=?", (menu_code,))}
+    dup = base in exist
+    return {"suggest": _unique_code(menu_code, base), "is_duplicate": dup,
+            "note": "编码已被占用，已自动追加序号" if dup else ""}
 
 
 @router.put("/{field_id}")
@@ -292,10 +296,13 @@ async def sort_fields(menu_code: str, body: SortBody, user: dict = Depends(requi
 
 
 @router.get("/library/list")
-def field_library(category: str = "", keyword: str = "", field_type: str = "",
+def field_library(category: str = "", keyword: str = "", field_type: str = "", menu_code: str = "",
                   user: dict = Depends(get_current_user)):
     sql = "SELECT * FROM sys_field_library"
     where, params = [], []
+    if menu_code:
+        where.append("name NOT IN (SELECT physical_field FROM sys_field_config WHERE menu_code=? AND is_deleted=0)")
+        params.append(menu_code)
     if category:
         where.append("category=?")
         params.append(category)

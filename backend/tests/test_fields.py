@@ -128,7 +128,29 @@ class TestCodeGeneration:
         r = client.get(f"/api/fields/{MENU}/code-suggest", headers=admin_h,
                        params={"label": "文化程度"})
         assert r.status_code == 200
-        assert r.json()["suggest"] == "wen_hua_cheng_du"
+        body = r.json()
+        assert body["suggest"] == "wen_hua_cheng_du"
+        assert body["is_duplicate"] is False
+
+    def test_code_suggest_duplicate_flag(self, client, admin_h):
+        code = "dupsugg"
+        r = client.post(f"/api/fields/{MENU}/simple", headers=admin_h,
+                        json={"display_label": _uniq("重复建议"), "data_type": "text", "code": code})
+        assert r.status_code == 200, r.text
+        r = client.get(f"/api/fields/{MENU}/code-suggest", headers=admin_h,
+                       params={"label": code})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["is_duplicate"] is True
+        assert body["suggest"] == f"{code}_2"
+
+    def test_library_excludes_added(self, client, admin_h):
+        fs = _get_field(client, admin_h)
+        used = {f["physical_field"] for f in fs}
+        r = client.get("/api/fields/library/list", headers=admin_h, params={"menu_code": MENU})
+        assert r.status_code == 200
+        lib_names = {x["name"] for x in r.json()}
+        assert lib_names.isdisjoint(used)
 
     def test_manual_code_duplicate(self, client, admin_h):
         r = client.post(f"/api/fields/{MENU}/simple", headers=admin_h,

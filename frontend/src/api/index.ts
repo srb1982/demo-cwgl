@@ -19,7 +19,7 @@ export const updateField = (id: number, data: any) => request.put(`/fields/${id}
 export const deleteField = (id: number) => request.delete(`/fields/${id}`)
 export const restoreField = (id: number) => request.post(`/fields/${id}/restore`)
 export const sortFields = (menuCode: string, order: number[]) => request.post(`/fields/${menuCode}/sort`, { order })
-export const getFieldLibrary = () => request.get('/fields/library/list')
+export const getFieldLibrary = (menuCode?: string) => request.get('/fields/library/list', { params: { menu_code: menuCode } })
 export const getFieldLibraryCategories = () => request.get('/fields/library/categories')
 export const createFieldCategory = (name: string) => request.post('/fields/library/categories', { name })
 export const renameFieldCategory = (oldName: string, name: string) => request.put(`/fields/library/categories/${encodeURIComponent(oldName)}`, { name })
