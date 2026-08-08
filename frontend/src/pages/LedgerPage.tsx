@@ -17,6 +17,7 @@ import { isWritable } from '../store/auth'
 import { subscribeDataChanged } from '../socket'
 import { buildRules } from '../utils/fieldValidation'
 import { typeColor } from '../utils/fieldMeta'
+import { isImageUrl, extractFileName, formatNumber, truncateText } from '../utils/fieldRender'
 
 export default function LedgerPage() {
   const { code } = useParams()
@@ -91,12 +92,11 @@ export default function LedgerPage() {
     const val = record[field.physical_field]
     if (field.data_type === 'image') {
       if (!val) return null
-      const imgRe = /\.(jpe?g|png|gif|webp|bmp)(\?|$)/i
-      if (imgRe.test(val)) {
+      if (isImageUrl(val)) {
         return <Image src={val} width={46} height={34} style={{ objectFit: 'cover', borderRadius: 4 }} />
       }
-      const fname = decodeURIComponent(val.split('/').pop() || '附件')
-      return <a href={val} target="_blank" rel="noreferrer" title={fname}>{fname.slice(0, 12)}</a>
+      const fname = extractFileName(val)
+      return <a href={val} target="_blank" rel="noreferrer" title={fname}>{truncateText(fname, 12)}</a>
     }
     if (field.data_type === 'select') {
       return <Tag color={typeColor.select}>{val || '-'}</Tag>
@@ -105,11 +105,11 @@ export default function LedgerPage() {
       return val ? <Tag color="green">是</Tag> : <Tag>否</Tag>
     }
     if (field.data_type === 'number' && typeof val === 'number') {
-      return Number.isInteger(val) ? String(val) : val
+      return formatNumber(val)
     }
     if (field.data_type === 'textarea' && val) {
       const s = String(val)
-      return <span title={s}>{s.length > 20 ? `${s.slice(0, 20)}…` : s}</span>
+      return <span title={s}>{truncateText(s)}</span>
     }
     const dup = field.physical_field === 'id_card' && dupResult?.id_card?.some((d: any) => d.value === val)
     const dupH = field.physical_field === 'household_no' && dupResult?.household_no?.some((d: any) => d.value === val)
