@@ -172,7 +172,7 @@ class TestSimpleCreateProps:
         name = _uniq("车牌号")
         r = client.post(f"/api/fields/{MENU}/simple", headers=admin_h,
                         json={"display_label": name, "data_type": "text",
-                              "props": {"default_value": "川A",
+                              "props": {"default_value": "川A", "col_span": 2,
                                         "regex": "^[\\u4e00-\\u9fa5][A-Z]",
                                         "regex_message": "格式不正确"}})
         assert r.status_code == 200, r.text
@@ -180,6 +180,7 @@ class TestSimpleCreateProps:
         assert created is not None
         props = created.get("props") or {}
         assert props.get("default_value") == "川A"
+        assert props.get("col_span") == 2
         assert props.get("regex") is not None
 
     def test_custom_field_type_change(self, client, admin_h):

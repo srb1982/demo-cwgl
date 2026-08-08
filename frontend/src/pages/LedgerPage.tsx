@@ -431,7 +431,7 @@ export default function LedgerPage() {
                 name={f.physical_field}
                 label={f.display_label}
                 rules={buildRules(f)}
-                style={{ gridColumn: f.data_type === 'text' ? 'span 1' : undefined }}
+                style={{ gridColumn: f.props?.col_span === 2 ? 'span 2' : 'span 1' }}
                 extra={f.data_type === 'image' ? '支持上传图片或常用文档（JPG/PNG/PDF/Word/Excel）' : f.props?.tips}
                 valuePropName={f.data_type === 'boolean' ? 'checked' : 'value'}
               >

@@ -157,9 +157,9 @@ export default function FieldsPage() {
   const submit = async () => {
     const values = await form.validateFields()
     const props: any = {}
-    for (const k of ['placeholder', 'tips', 'max_length', 'format_type', 'default_value', 'regex', 'regex_message']) {
+    for (const k of ['placeholder', 'tips', 'max_length', 'format_type', 'default_value', 'regex', 'regex_message', 'col_span']) {
       const v = values[k]
-      if (v !== undefined && v !== '' && v !== null) props[k] = k === 'max_length' ? Number(v) : v
+      if (v !== undefined && v !== '' && v !== null) props[k] = (k === 'max_length' || k === 'col_span') ? Number(v) : v
     }
     const payload: any = {
       display_label: values.display_label,
@@ -264,6 +264,7 @@ export default function FieldsPage() {
               placeholder: props.placeholder, tips: props.tips,
               max_length: props.max_length, format_type: props.format_type || '',
               default_value: props.default_value, regex: props.regex, regex_message: props.regex_message,
+              col_span: props.col_span || 1,
             })
           }}>编辑</Button>
           <Popconfirm title="删除后字段进入回收站，历史数据保留，确认删除？" onConfirm={async () => {
@@ -631,6 +632,12 @@ export default function FieldsPage() {
           </div>
           <Form.Item name="regex" label="自定义正则表达式" extra="与上方格式校验二选一，用于特殊格式需求">
             <Input placeholder="如 ^1[3-9]\d{9}$" />
+          </Form.Item>
+          <Form.Item name="col_span" label="表单列宽">
+            <Select options={[
+              { label: '半行（与其他字段并排）', value: 1 },
+              { label: '整行（独占一行）', value: 2 },
+            ]} />
           </Form.Item>
           <Form.Item name="show_in_list" label="台账列表展示" valuePropName="checked">
             <Switch />
