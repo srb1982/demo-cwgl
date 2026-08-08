@@ -85,6 +85,22 @@ class SimpleFieldBody(BaseModel):
     props: dict = None
 
 
+class BulkFieldItem(BaseModel):
+    id: int = None
+    display_label: str = None
+    data_type: str = None
+    show_in_list: int = None
+    show_in_form: int = None
+    is_required: int = None
+    sort_order: int = 0
+    options: list = None
+    props: dict = None
+
+
+class BulkSaveBody(BaseModel):
+    fields: list[BulkFieldItem] = []
+
+
 def _menu_info(menu_code):
     m = query_one("SELECT * FROM sys_menu_config WHERE code=?", (menu_code,))
     if not m or m["is_ledger"] != 1:
@@ -193,6 +209,81 @@ async def create_simple_field(menu_code: str, body: SimpleFieldBody,
     log_operation(user, "新增字段", "字段配置", f"台账[{m['name']}]简化新增字段 {body.display_label}（{physical}）", get_client_ip(request))
     await notify_data_changed(menu_code, "field")
     return {"message": "字段创建成功", "physical_field": physical}
+
+
+@router.put("/{menu_code}/bulk")
+async def bulk_save_fields(menu_code: str, body: BulkSaveBody,
+                           user: dict = Depends(require_roles(ROLE_ADMIN, ROLE_MANAGER)), request: Request = None):
+    """全量保存菜单的字段配置：按传入顺序逐项更新，含必填可见性保护与系统字段类型锁定，事务内执行"""
+    m = _menu_info(menu_code)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    updated = created = 0
+    with get_db() as db:
+        for idx, item in enumerate(body.fields, 1):
+            sort = item.sort_order or idx
+            if item.id:
+                row = db.execute("SELECT * FROM sys_field_config WHERE id=? AND menu_code=? AND is_deleted=0",
+                                 (item.id, menu_code)).fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail=f"字段配置不存在(id={item.id})")
+                f = dict(row)
+                if item.data_type and item.data_type != f["data_type"]:
+                    if f["is_system"] == 1:
+                        raise HTTPException(status_code=400, detail=f"系统内置字段[{f['display_label']}]类型锁定保护，禁止变更")
+                    if item.data_type not in VALID_TYPES:
+                        raise HTTPException(status_code=400, detail="字段类型不合法")
+                is_required = item.is_required if item.is_required is not None else f["is_required"]
+                show_in_form = item.show_in_form if item.show_in_form is not None else f["show_in_form"]
+                show_in_list = item.show_in_list if item.show_in_list is not None else f["show_in_list"]
+                label = item.display_label or f["display_label"]
+                if is_required == 1 and show_in_form == 0:
+                    raise HTTPException(status_code=400, detail=f"必填字段[{label}]不可在录入表单中隐藏")
+                if is_required == 1 and show_in_list == 0:
+                    raise HTTPException(status_code=400, detail=f"必填字段[{label}]不可在列表中隐藏")
+                data_type = item.data_type or f["data_type"]
+                db.execute(
+                    "UPDATE sys_field_config SET display_label=?,data_type=?,form_component=?,show_in_list=?,show_in_form=?,is_required=?,sort_order=?,options_json=?,props_json=?,update_time=? WHERE id=?",
+                    (label, data_type, VALID_COMPONENTS[data_type], show_in_list, show_in_form, is_required,
+                     sort, dumps(item.options) if item.options is not None else f["options_json"],
+                     dumps(item.props) if item.props is not None else f["props_json"], now, item.id))
+                updated += 1
+            else:
+                if not item.display_label or not item.display_label.strip():
+                    raise HTTPException(status_code=400, detail="字段名称不能为空")
+                if not item.data_type or item.data_type not in VALID_TYPES:
+                    raise HTTPException(status_code=400, detail="字段类型不合法")
+                dup = db.execute("SELECT id FROM sys_field_config WHERE menu_code=? AND display_label=? AND is_deleted=0",
+                                 (menu_code, item.display_label.strip())).fetchone()
+                if dup:
+                    raise HTTPException(status_code=400, detail=f"字段名称[{item.display_label}]已添加到当前台账")
+                show_form = item.show_in_form if item.show_in_form is not None else 1
+                show_list = item.show_in_list if item.show_in_list is not None else 1
+                if (item.is_required or 0) == 1 and (show_form == 0 or show_list == 0):
+                    raise HTTPException(status_code=400, detail=f"必填字段[{item.display_label}]不可隐藏")
+                seq = db.execute("SELECT COUNT(*) c FROM sys_field_config WHERE menu_code=?", (menu_code,)).fetchone()["c"] + 1
+                rows = db.execute("SELECT physical_field FROM sys_field_config WHERE menu_code=?", (menu_code,)).fetchall()
+                exist = {r["physical_field"] for r in rows}
+                base = _pinyin_code(item.display_label)
+                physical = None
+                if base:
+                    physical = base
+                    if physical in exist:
+                        i = 2
+                        while f"{physical}_{i}" in exist:
+                            i += 1
+                        physical = f"{physical}_{i}"
+                else:
+                    physical = f"ext_{seq}"
+                db.execute(
+                    "INSERT INTO sys_field_config(menu_code,physical_field,display_label,data_type,form_component,is_system,show_in_list,show_in_form,is_required,sort_order,is_deleted,options_json,props_json,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (menu_code, physical, item.display_label.strip(), item.data_type, VALID_COMPONENTS[item.data_type],
+                     0, item.show_in_list or 1, item.show_in_form or 1, item.is_required or 0, sort, 0,
+                     dumps(item.options), dumps(item.props), now, now))
+                created += 1
+    log_operation(user, "批量保存字段", "字段配置",
+                  f"台账[{m['name']}]全量保存字段配置：更新{updated}条，新增{created}条", get_client_ip(request))
+    await notify_data_changed(menu_code, "field")
+    return {"message": "保存成功", "updated": updated, "created": created}
 
 
 @router.get("/{menu_code}/code-suggest")

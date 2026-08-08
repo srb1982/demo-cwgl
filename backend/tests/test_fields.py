@@ -296,3 +296,56 @@ class TestRecycleAndSort:
         assert [f["id"] for f in after] == reversed_ids
         r = client.post(f"/api/fields/{MENU}/sort", headers=admin_h, json={"order": ids})
         assert r.status_code == 200
+
+
+class TestBulkSave:
+    def test_bulk_update_existing(self, client, admin_h):
+        f = _get_field(client, admin_h)[0]
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h, json={"fields": [
+            {"id": f["id"], "display_label": f["display_label"], "is_required": f["is_required"],
+             "show_in_form": f["show_in_form"], "show_in_list": f["show_in_list"], "props": {"tips": "批量保存测试"}},
+        ]})
+        assert r.status_code == 200, r.text
+        assert r.json()["updated"] == 1
+        after = _get_field(client, admin_h, label=f["display_label"])
+        assert after["props"]["tips"] == "批量保存测试"
+
+    def test_bulk_create_new(self, client, admin_h):
+        name = _uniq("批量新增")
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h, json={"fields": [
+            {"display_label": name, "data_type": "text", "show_in_list": 1, "show_in_form": 1, "is_required": 0},
+        ]})
+        assert r.status_code == 200, r.text
+        assert r.json()["created"] == 1
+        assert _get_field(client, admin_h, label=name) is not None
+
+    def test_bulk_required_cannot_hide(self, client, admin_h):
+        f = _get_field(client, admin_h, label="身份证号码")
+        assert f["is_required"] == 1
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h, json={"fields": [
+            {"id": f["id"], "is_required": 1, "show_in_form": 0},
+        ]})
+        assert r.status_code == 400
+        assert "必填" in r.json()["detail"]
+
+    def test_bulk_system_type_locked(self, client, admin_h):
+        f = _get_field(client, admin_h, label="身份证号码")
+        assert f["is_system"] == 1
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h, json={"fields": [
+            {"id": f["id"], "data_type": "number"},
+        ]})
+        assert r.status_code == 400
+        assert "类型锁定" in r.json()["detail"]
+
+    def test_bulk_rollback_on_failure(self, client, admin_h):
+        f = _get_field(client, admin_h)[0]
+        before_label = f["display_label"]
+        name = _uniq("回滚字段")
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h, json={"fields": [
+            {"id": f["id"], "display_label": "不应生效"},
+            {"display_label": name, "data_type": "text", "is_required": 1, "show_in_form": 0},
+        ]})
+        assert r.status_code == 400
+        assert _get_field(client, admin_h, label=before_label) is not None
+        assert _get_field(client, admin_h, label="不应生效") is None
+        assert _get_field(client, admin_h, label=name) is None
