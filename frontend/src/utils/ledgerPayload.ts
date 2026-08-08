@@ -17,3 +17,19 @@ export const buildLedgerPayload = (fields: any[], values: Record<string, any>): 
   }
   return payload
 }
+
+export const buildFormValues = (fields: any[], record: Record<string, any>): Record<string, any> => {
+  const values: any = {}
+  for (const f of fields) {
+    const v = record[f.physical_field]
+    if (v === null || v === undefined) continue
+    if (f.data_type === 'date' || f.data_type === 'datetime') {
+      values[f.physical_field] = v ? dayjs(v) : undefined
+    } else if (f.data_type === 'boolean') {
+      values[f.physical_field] = !!v
+    } else {
+      values[f.physical_field] = v
+    }
+  }
+  return values
+}

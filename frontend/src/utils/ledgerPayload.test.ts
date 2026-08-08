@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { buildLedgerPayload } from './ledgerPayload'
+import dayjs from 'dayjs'
+import { buildLedgerPayload, buildFormValues } from './ledgerPayload'
 
 const fields = [
   { physical_field: 'name', data_type: 'text' },
@@ -38,5 +39,39 @@ describe('buildLedgerPayload 台账录入提交构造', () => {
 
   it('空表单返回空对象', () => {
     expect(buildLedgerPayload(fields, {})).toEqual({})
+  })
+})
+
+describe('buildFormValues 编辑回填构造', () => {
+  it('日期与日期时间转 dayjs 对象', () => {
+    const values = buildFormValues(fields, { birth_date: '2024-01-05', created_at: '2024-01-05 10:30:00' })
+    expect(dayjs.isDayjs(values.birth_date)).toBe(true)
+    expect(dayjs.isDayjs(values.created_at)).toBe(true)
+  })
+
+  it('boolean 转布尔值', () => {
+    expect(buildFormValues(fields, { is_poor: 1 }).is_poor).toBe(true)
+    expect(buildFormValues(fields, { is_poor: 0 }).is_poor).toBe(false)
+  })
+
+  it('null/undefined 不进入回填', () => {
+    const values = buildFormValues(fields, { name: '张三', birth_date: null, score: undefined })
+    expect(values.birth_date).toBeUndefined()
+    expect(values.score).toBeUndefined()
+  })
+
+  it('普通字段原样保留', () => {
+    const values = buildFormValues(fields, { name: '张三', score: 88 })
+    expect(values.name).toBe('张三')
+    expect(values.score).toBe(88)
+  })
+
+  it('与 buildLedgerPayload 对称：编辑保存后日期不漂移', () => {
+    const record = { birth_date: '2024-01-05', created_at: '2024-01-05 10:30:00', is_poor: 1 }
+    const formValues = buildFormValues(fields, record)
+    const payload = buildLedgerPayload(fields, formValues)
+    expect(payload.birth_date).toBe('2024-01-05')
+    expect(payload.created_at).toBe('2024-01-05 10:30:00')
+    expect(payload.is_poor).toBe(1)
   })
 })

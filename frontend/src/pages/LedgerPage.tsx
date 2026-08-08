@@ -18,7 +18,7 @@ import { subscribeDataChanged } from '../socket'
 import { buildRules } from '../utils/fieldValidation'
 import { typeColor } from '../utils/fieldMeta'
 import { isImageUrl, extractFileName, formatNumber, truncateText } from '../utils/fieldRender'
-import { buildLedgerPayload } from '../utils/ledgerPayload'
+import { buildLedgerPayload, buildFormValues } from '../utils/ledgerPayload'
 
 export default function LedgerPage() {
   const { code } = useParams()
@@ -180,18 +180,7 @@ export default function LedgerPage() {
 
   const openEdit = async (id: number) => {
     const res: any = await getLedgerDetail(code!, id)
-    const values: any = {}
-    for (const f of res.fields) {
-      const v = res.item[f.physical_field]
-      if (v === null || v === undefined) continue
-      if (f.data_type === 'date' || f.data_type === 'datetime') {
-        values[f.physical_field] = v ? dayjs(v) : undefined
-      } else if (f.data_type === 'boolean') {
-        values[f.physical_field] = !!v
-      } else {
-        values[f.physical_field] = v
-      }
-    }
+    const values = buildFormValues(res.fields, res.item)
     form.setFieldsValue(values)
     setEditing({ id })
     setFormOpen(true)
