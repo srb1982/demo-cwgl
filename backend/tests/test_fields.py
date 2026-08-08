@@ -241,6 +241,26 @@ class TestNewLedgerAutoInit:
         assert all(f["show_in_list"] == 1 and f["show_in_form"] == 1 for f in fs)
         client.delete(f"/api/menus/{code}", headers=admin_h)
 
+    def test_create_ledger_creates_table_and_columns(self, client, admin_h):
+        import sqlite3
+        from app import config
+        code = _uniq("tl2")
+        r = client.post("/api/menus", headers=admin_h,
+                        json={"code": code, "name": "建表验证台账", "is_ledger": 1,
+                              "is_visible": 1, "table_name": f"t_{code}"})
+        assert r.status_code == 200, r.text
+        conn = sqlite3.connect(config.DB_PATH)
+        tabs = {x[0] for x in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert f"t_{code}" in tabs, "台账表未创建"
+        cols = {x[1] for x in conn.execute(f"PRAGMA table_info(t_{code})")}
+        conn.close()
+        fs = _get_field(client, admin_h, menu=code)
+        assert all(f["physical_field"] in cols for f in fs), "初始化字段物理列缺失"
+        payload = {f["physical_field"]: f"值{f['physical_field']}" for f in fs[:2]}
+        r2 = client.post(f"/api/ledger/{code}", headers=admin_h, json=payload)
+        assert r2.status_code == 200, f"录入失败: {r2.text}"
+        client.delete(f"/api/menus/{code}", headers=admin_h)
+
     def test_non_ledger_no_init(self, client, admin_h):
         code = _uniq("nm")
         r = client.post("/api/menus", headers=admin_h,
