@@ -205,6 +205,21 @@ class TestSimpleCreateProps:
         assert props.get("col_span") == 2
         assert props.get("regex") is not None
 
+    def test_simple_create_adds_physical_column(self, client, admin_h):
+        import sqlite3
+        from app import config
+        name = _uniq("物理列")
+        r = client.post(f"/api/fields/{MENU}/simple", headers=admin_h,
+                        json={"display_label": name, "data_type": "select", "options": ["A", "B"]})
+        assert r.status_code == 200, r.text
+        f = _get_field(client, admin_h, label=name)
+        table = next(m["table_name"] for m in client.get("/api/menus", headers=admin_h).json()
+                     if m["code"] == MENU)
+        conn = sqlite3.connect(config.DB_PATH)
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        conn.close()
+        assert f["physical_field"] in cols
+
     def test_custom_field_type_change(self, client, admin_h):
         name = _uniq("类型")
         r = client.post(f"/api/fields/{MENU}/simple", headers=admin_h,
