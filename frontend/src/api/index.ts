@@ -16,6 +16,7 @@ export const getFields = (menuCode: string) => request.get(`/fields/${menuCode}`
 export const getRecycleFields = (menuCode: string) => request.get(`/fields/${menuCode}/recycle`)
 export const createField = (menuCode: string, data: any) => request.post(`/fields/${menuCode}`, data)
 export const updateField = (id: number, data: any) => request.put(`/fields/${id}`, data)
+export const bulkSaveFields = (menuCode: string, fields: any[]) => request.put(`/fields/${menuCode}/bulk`, { fields })
 export const deleteField = (id: number) => request.delete(`/fields/${id}`)
 export const restoreField = (id: number) => request.post(`/fields/${id}/restore`)
 export const sortFields = (menuCode: string, order: number[]) => request.post(`/fields/${menuCode}/sort`, { order })

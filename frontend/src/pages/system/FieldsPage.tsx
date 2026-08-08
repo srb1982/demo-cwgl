@@ -11,7 +11,7 @@ import {
 import {
   getMenus, getFields, getRecycleFields, createField, updateField, deleteField, restoreField,
   sortFields, getFieldLibrary, getFieldLibraryCategories, createSimpleField, fieldCodeSuggest,
-  createFieldCategory, renameFieldCategory, deleteFieldCategory,
+  createFieldCategory, renameFieldCategory, deleteFieldCategory, bulkSaveFields,
 } from '../../api'
 import { isWritable, isAdmin } from '../../store/auth'
 import { typeName, typeColor, typeOptions, formatOptions } from '../../utils/fieldMeta'
@@ -326,14 +326,12 @@ export default function FieldsPage() {
     }
     modal.confirm({
       title: `批量添加 ${items.length} 个预置字段？`,
-      content: `将依次创建：${items.map((i) => i.label).join('、')}`,
+      content: `将一次事务创建：${items.map((i) => i.label).join('、')}`,
       onOk: async () => {
-        for (const item of items) {
-          await createField(menuCode, {
-            display_label: item.label, data_type: item.data_type, show_in_list: 1, show_in_form: 1,
-            is_required: 0, options: item.options,
-          })
-        }
+        await bulkSaveFields(menuCode, items.map((item) => ({
+          display_label: item.label, data_type: item.data_type, show_in_list: 1, show_in_form: 1,
+          is_required: 0, options: item.options,
+        })))
         message.success(`已批量添加 ${items.length} 个字段`)
         setLibSelected([])
         loadFields()

@@ -274,6 +274,7 @@ async def bulk_save_fields(menu_code: str, body: BulkSaveBody,
                         physical = f"{physical}_{i}"
                 else:
                     physical = f"ext_{seq}"
+                ensure_column(db, m["table_name"], physical, SQLITE_TYPE_MAP[item.data_type])
                 db.execute(
                     "INSERT INTO sys_field_config(menu_code,physical_field,display_label,data_type,form_component,is_system,show_in_list,show_in_form,is_required,sort_order,is_deleted,options_json,props_json,create_time,update_time) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (menu_code, physical, item.display_label.strip(), item.data_type, VALID_COMPONENTS[item.data_type],

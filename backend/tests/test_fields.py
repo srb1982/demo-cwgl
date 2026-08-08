@@ -319,6 +319,26 @@ class TestBulkSave:
         assert r.json()["created"] == 1
         assert _get_field(client, admin_h, label=name) is not None
 
+    def test_bulk_create_adds_physical_column(self, client, admin_h):
+        import sqlite3
+        from app import config
+        name = _uniq("建列")
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h, json={"fields": [
+            {"display_label": name, "data_type": "number", "show_in_list": 1, "show_in_form": 1, "is_required": 0},
+        ]})
+        assert r.status_code == 200, r.text
+        f = _get_field(client, admin_h, label=name)
+        table = None
+        menus = client.get("/api/menus", headers=admin_h).json()
+        for m in menus:
+            if m["code"] == MENU:
+                table = m["table_name"]
+        assert table
+        conn = sqlite3.connect(config.DB_PATH)
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        conn.close()
+        assert f["physical_field"] in cols
+
     def test_bulk_required_cannot_hide(self, client, admin_h):
         f = _get_field(client, admin_h, label="身份证号码")
         assert f["is_required"] == 1
