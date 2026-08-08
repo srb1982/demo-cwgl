@@ -171,8 +171,19 @@ export default function FieldsPage() {
       props,
     }
     if (modalState.id) {
-      await updateField(modalState.id, payload)
-      message.success('修改成功')
+      payload.update_time = modalState.update_time
+      try {
+        await updateField(modalState.id, payload)
+        message.success('修改成功')
+      } catch (e: any) {
+        if (e?.response?.status === 409) {
+          message.error(e?.response?.data?.detail || '数据已被他人修改，请刷新后重新操作')
+          setModalState(null)
+          loadFields()
+          return
+        }
+        throw e
+      }
     } else {
       await createField(menuCode, payload)
       message.success('字段创建成功，已同步新增数据列')
@@ -243,7 +254,7 @@ export default function FieldsPage() {
       title: '操作', width: 170, render: (_: any, r: any) => (
         <Space>
           <Button size="small" icon={<EditOutlined />} onClick={() => {
-            setModalState({ id: r.id })
+            setModalState({ id: r.id, update_time: r.update_time })
             const props = r.props || {}
             form.setFieldsValue({
               display_label: r.display_label, data_type: r.data_type,
@@ -440,7 +451,12 @@ export default function FieldsPage() {
             {
               key: 'list',
               label: `字段配置（${list.length}）`,
-              children: <Table rowKey="id" columns={columns} dataSource={list} loading={loading} pagination={false} size="middle" />,
+              children: <Table rowKey="id" columns={columns} dataSource={list} loading={loading} pagination={false} size="middle"
+                locale={{ emptyText: (
+                  <div style={{ padding: '28px 0', color: 'rgba(0,0,0,.45)' }}>
+                    {writable ? '暂无字段配置，点击右上角「新增自定义字段」或到「预置字段库」添加字段开始配置' : '暂无字段配置'}
+                  </div>
+                ) }} />,
             },
             {
               key: 'library',

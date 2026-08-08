@@ -73,6 +73,7 @@ class FieldBody(BaseModel):
     options: list = None
     props: dict = None
     sort_order: int = 0
+    update_time: str = None
 
 
 class SimpleFieldBody(BaseModel):
@@ -103,7 +104,7 @@ def _fmt(f):
         "show_in_list": f["show_in_list"], "show_in_form": f["show_in_form"],
         "is_required": f["is_required"], "sort_order": f["sort_order"],
         "is_deleted": f["is_deleted"], "options": loads(f["options_json"], []),
-        "props": props,
+        "props": props, "update_time": f["update_time"],
     }
 
 
@@ -211,6 +212,9 @@ async def update_field(field_id: int, body: FieldBody, user: dict = Depends(requ
         raise HTTPException(status_code=404, detail="字段不存在")
     m = _menu_info(f["menu_code"])
     body_data = body.model_dump(exclude_unset=True)
+    # 并发修改冲突检测（基于 update_time 版本）
+    if body.update_time and str(body.update_time) != str(f["update_time"] or ""):
+        raise HTTPException(status_code=409, detail="数据已被他人修改，请刷新后重新操作")
     # 系统内置字段：类型与编码锁定，禁止变更
     if f["is_system"] == 1 and body.data_type and body.data_type != f["data_type"]:
         raise HTTPException(status_code=400, detail="系统内置字段类型锁定保护，禁止变更")

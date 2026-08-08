@@ -228,6 +228,26 @@ class TestNewLedgerAutoInit:
         assert r.status_code in (400, 404)
 
 
+class TestConcurrentConflict:
+    def test_stale_update_time_conflict(self, client, admin_h):
+        f = _get_field(client, admin_h, label="性别")
+        assert f.get("update_time")
+        r = client.put(f"/api/fields/{f['id']}", headers=admin_h,
+                       json={"display_label": "性别", "update_time": "2000-01-01 00:00:00"})
+        assert r.status_code == 409
+        assert "已被他人修改" in r.json()["detail"]
+
+    def test_current_update_time_accepted(self, client, admin_h):
+        f = _get_field(client, admin_h, label="性别")
+        r = client.put(f"/api/fields/{f['id']}", headers=admin_h,
+                       json={"display_label": "性别", "update_time": f["update_time"]})
+        assert r.status_code == 200, r.text
+
+    def test_list_returns_update_time(self, client, admin_h):
+        fs = _get_field(client, admin_h)
+        assert all("update_time" in f for f in fs)
+
+
 class TestRecycleAndSort:
     def test_delete_then_restore(self, client, admin_h):
         name = _uniq("回收")
