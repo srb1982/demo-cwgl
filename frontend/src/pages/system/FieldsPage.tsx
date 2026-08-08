@@ -16,6 +16,7 @@ import {
 import { isWritable, isAdmin } from '../../store/auth'
 import { typeName, typeColor, typeOptions, formatOptions } from '../../utils/fieldMeta'
 import { buildMenuTree, getMenuPath } from '../../utils/menuTree'
+import { collectFieldProps, parseOptions } from '../../utils/fieldProps'
 
 const typeSelectRender = (t: any) => (
   <div>
@@ -119,18 +120,14 @@ export default function FieldsPage() {
 
   const submit = async () => {
     const values = await form.validateFields()
-    const props: any = {}
-    for (const k of ['placeholder', 'tips', 'max_length', 'format_type', 'default_value', 'regex', 'regex_message', 'col_span']) {
-      const v = values[k]
-      if (v !== undefined && v !== '' && v !== null) props[k] = (k === 'max_length' || k === 'col_span') ? Number(v) : v
-    }
+    const props = collectFieldProps(values)
     const payload: any = {
       display_label: values.display_label,
       data_type: values.data_type,
       show_in_list: values.show_in_list ? 1 : 0,
       show_in_form: values.show_in_form ? 1 : 0,
       is_required: values.is_required ? 1 : 0,
-      options: values.data_type === 'select' && values.options ? values.options.split(/[,，]/).map((s: string) => s.trim()).filter(Boolean) : null,
+      options: values.data_type === 'select' && values.options ? parseOptions(values.options) : null,
       props,
     }
     if (modalState.id) {
