@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterLibrary } from './fieldLibrary'
+import { filterLibrary, moveItem } from './fieldLibrary'
 
 const lib = [
   { category: 'villager', data_type: 'text', label: '姓名', name: 'name' },
@@ -39,5 +39,29 @@ describe('filterLibrary 字段库过滤', () => {
 
   it('空列表返回空', () => {
     expect(filterLibrary([], { keyword: 'x' })).toEqual([])
+  })
+})
+
+describe('moveItem 字段排序移动', () => {
+  const list = ['a', 'b', 'c']
+
+  it('向下移动', () => {
+    expect(moveItem(list, 0, 1)).toEqual(['b', 'a', 'c'])
+  })
+
+  it('向上移动', () => {
+    expect(moveItem(list, 2, -1)).toEqual(['a', 'c', 'b'])
+  })
+
+  it('越界返回 null 不修改', () => {
+    expect(moveItem(list, 0, -1)).toBeNull()
+    expect(moveItem(list, 2, 1)).toBeNull()
+    expect(list).toEqual(['a', 'b', 'c'])
+  })
+
+  it('不原地修改原数组', () => {
+    const out = moveItem(list, 0, 1)!
+    expect(out).not.toBe(list)
+    expect(list).toEqual(['a', 'b', 'c'])
   })
 })

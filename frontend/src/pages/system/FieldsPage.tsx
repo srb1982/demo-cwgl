@@ -17,7 +17,7 @@ import { isWritable, isAdmin } from '../../store/auth'
 import { typeName, typeColor, typeOptions, formatOptions } from '../../utils/fieldMeta'
 import { buildMenuTree, getMenuPath, computeExpandedKeys } from '../../utils/menuTree'
 import { collectFieldProps, parseOptions } from '../../utils/fieldProps'
-import { filterLibrary } from '../../utils/fieldLibrary'
+import { filterLibrary, moveItem } from '../../utils/fieldLibrary'
 
 const typeSelectRender = (t: any) => (
   <div>
@@ -110,11 +110,8 @@ export default function FieldsPage() {
   }
 
   const move = async (index: number, dir: number) => {
-    const target = index + dir
-    if (target < 0 || target >= list.length) return
-    const next = [...list]
-    const item = next.splice(index, 1)[0]
-    next.splice(target, 0, item)
+    const next = moveItem(list, index, dir)
+    if (!next) return
     setList(next)
     await persistSort(next)
   }
