@@ -12,14 +12,20 @@ def _mk_warning(menu="villager", level="yellow", status="pending", content="预�
     return query_one("SELECT id FROM t_warning ORDER BY id DESC")["id"]
 
 
+def _reset_warnings():
+    execute("DELETE FROM t_warning")
+
+
 class TestList:
     def test_list_empty(self, client, admin_h):
+        _reset_warnings()
         r = client.get("/api/warnings", headers=admin_h)
         assert r.status_code == 200
         assert r.json()["total"] == 0
         assert r.json()["list"] == []
 
     def test_list_filter_status_level_keyword(self, client, admin_h):
+        _reset_warnings()
         _mk_warning(level="red", status="pending", content="红色紧急预警")
         _mk_warning(level="yellow", status="handled", content="黄色已办结")
         r = client.get("/api/warnings?level=red&status=pending", headers=admin_h)
@@ -30,12 +36,14 @@ class TestList:
         assert r.json()["list"][0]["level"] == "yellow"
 
     def test_list_ordering_red_first(self, client, admin_h):
+        _reset_warnings()
         _mk_warning(level="yellow", content="黄")
         _mk_warning(level="red", content="红")
         r = client.get("/api/warnings", headers=admin_h)
         assert r.json()["list"][0]["level"] == "red"
 
     def test_level_and_status_names(self, client, admin_h):
+        _reset_warnings()
         _mk_warning(level="red")
         row = client.get("/api/warnings", headers=admin_h).json()["list"][0]
         assert row["level_name"] == "紧急" and row["status_name"] == "待办"
@@ -43,17 +51,14 @@ class TestList:
 
 class TestSummary:
     def test_summary_counts(self, client, admin_h):
-        before = client.get("/api/warnings/summary", headers=admin_h).json()
+        _reset_warnings()
         _mk_warning(level="red", status="pending")
         _mk_warning(level="yellow", status="handled")
         _mk_warning(level="green", status="pending")
         s = client.get("/api/warnings/summary", headers=admin_h).json()
-        assert s["red"] == before["red"] + 1
-        assert s["yellow"] == before["yellow"] + 1
-        assert s["green"] == before["green"] + 1
-        assert s["total"] == before["total"] + 3
-        assert s["pending"] == before["pending"] + 2
-        assert s["handled"] == before["handled"] + 1
+        assert s["red"] == 1 and s["yellow"] == 1 and s["green"] == 1
+        assert s["total"] == 3
+        assert s["pending"] == 2 and s["handled"] == 1
 
 
 class TestHandle:

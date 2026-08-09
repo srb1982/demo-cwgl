@@ -49,7 +49,8 @@ Entries discovered by the Agent during task execution should follow this format:
 - Context: Discovered by Agent while 为字段配置模块编写 pytest 集成测试
 - Category: Testing Methods
 - Instructions:
-  - 后端集成测试：`cd backend && python3 -m pytest tests/ -v`；依赖 pytest 与 httpx（已全局安装）。测试通过 conftest.py 自动切换到临时隔离 SQLite 库并执行 seed 初始化，不触碰生产 data/village.db；覆盖字段模块权限矩阵、必填保护、系统字段锁定、防重、编码生成、分类管理、回收站、排序、新台账自动初始化等 29 项断言。新增后端改动后跑一遍该套件可快速回归。
+  - 后端集成测试：`cd backend && python3 -m pytest tests/ -v`；依赖 pytest 与 httpx（已全局安装）。测试通过 conftest.py 自动切换到临时隔离 SQLite 库并执行 seed 初始化，不触碰生产 data/village.db；已扩展为覆盖全部 11 个路由模块（字段/台账/菜单/用户/三费/预警/系统/档案/认证/概览）共 158 项断言。新增后端改动后跑一遍该套件可快速回归。
+  - 后端测试套件已装 pytest-randomly 并通过随机顺序多种子验证（158 全过）；写测试须自包含、用独立唯一标识（uuid）造数，避免 session 共享库下的顺序依赖。
   - 后端新增依赖一律 `pip install --break-system-packages <pkg>`（系统 Python 无 venv）。
 
 [Project Knowledge Summary]

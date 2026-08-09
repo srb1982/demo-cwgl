@@ -30,10 +30,11 @@ class TestMeta:
 
 class TestSummary:
     def test_summary_counts(self, client, admin_h):
-        _mk_fee(client, admin_h, fee_year="2025", village_group="一组",
+        y = _uniq("Y")
+        _mk_fee(client, admin_h, fee_year=y, village_group="一组",
                 medical_status=300, pension_status=300, supplement_status=100, amount=700)
-        _mk_fee(client, admin_h, fee_year="2025", village_group="二组")
-        r = client.get("/api/fee/summary?year=2025", headers=admin_h)
+        _mk_fee(client, admin_h, fee_year=y, village_group="二组")
+        r = client.get(f"/api/fee/summary?year={y}", headers=admin_h)
         assert r.status_code == 200
         ov = r.json()["overview"]
         assert ov["total"] == 2
@@ -42,16 +43,19 @@ class TestSummary:
         assert ov["color"] == "yellow"
 
     def test_per_type(self, client, admin_h):
-        _mk_fee(client, admin_h, fee_year="2025", medical_status=300, pension_status=0, supplement_status=100)
-        r = client.get("/api/fee/summary?year=2025", headers=admin_h)
+        y = _uniq("Y")
+        _mk_fee(client, admin_h, fee_year=y, medical_status=300, pension_status=0, supplement_status=100)
+        r = client.get(f"/api/fee/summary?year={y}", headers=admin_h)
         per = r.json()["per_type"]
-        assert per["medical_status"]["paid"] >= 1
-        assert per["pension_status"]["unpaid"] >= 1
+        assert per["medical_status"]["paid"] == 1
+        assert per["pension_status"]["unpaid"] == 1
 
     def test_groups_aggregate(self, client, admin_h):
-        _mk_fee(client, admin_h, fee_year="2025", village_group="三组", medical_status=100, pension_status=100, supplement_status=100)
-        r = client.get("/api/fee/summary?year=2025", headers=admin_h)
-        g = next(x for x in r.json()["groups"] if x["group"] == "三组")
+        y = _uniq("Y")
+        gname = _uniq("组")
+        _mk_fee(client, admin_h, fee_year=y, village_group=gname, medical_status=100, pension_status=100, supplement_status=100)
+        r = client.get(f"/api/fee/summary?year={y}", headers=admin_h)
+        g = next(x for x in r.json()["groups"] if x["group"] == gname)
         assert g["total"] == 1 and g["paid"] == 3 and g["rate"] == 100.0
         assert g["color"] == "green"
 
