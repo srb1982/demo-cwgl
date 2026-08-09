@@ -19,6 +19,7 @@ import { buildRules } from '../utils/fieldValidation'
 import { typeColor } from '../utils/fieldMeta'
 import { isImageUrl, extractFileName, formatNumber, truncateText } from '../utils/fieldRender'
 import { buildLedgerPayload, buildFormValues, buildDefaultValues } from '../utils/ledgerPayload'
+import { extractFilters } from '../utils/tableFilters'
 
 export default function LedgerPage() {
   const { code } = useParams()
@@ -343,12 +344,7 @@ export default function LedgerPage() {
           }}
           onChange={(pag, _f, _s, extra) => {
             if (extra.action === 'filter') {
-              const next: Record<string, string> = {}
-              Object.keys(_f).forEach((key) => {
-                const arr = _f[key] as string[]
-                if (arr && arr.length) next[key] = arr[0]
-              })
-              setFilters(next)
+              setFilters(extractFilters(_f))
               setPage(1)
             }
           }}
