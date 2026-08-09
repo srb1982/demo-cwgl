@@ -15,8 +15,9 @@ import {
 } from '../../api'
 import { isWritable, isAdmin } from '../../store/auth'
 import { typeName, typeColor, typeOptions, formatOptions } from '../../utils/fieldMeta'
-import { buildMenuTree, getMenuPath } from '../../utils/menuTree'
+import { buildMenuTree, getMenuPath, computeExpandedKeys } from '../../utils/menuTree'
 import { collectFieldProps, parseOptions } from '../../utils/fieldProps'
+import { filterLibrary } from '../../utils/fieldLibrary'
 
 const typeSelectRender = (t: any) => (
   <div>
@@ -336,12 +337,7 @@ export default function FieldsPage() {
     })
   }
 
-  const filteredLib = library.filter((item) => {
-    if (category && item.category !== category) return false
-    if (libType && item.data_type !== libType) return false
-    if (libKeyword && !`${item.label} ${item.name}`.includes(libKeyword)) return false
-    return true
-  })
+  const filteredLib = filterLibrary(library, { category, data_type: libType, keyword: libKeyword })
 
   const current = modalState?.id ? list.find((r) => r.id === modalState.id) : null
   const isSystem = !!current?.is_system
@@ -355,10 +351,7 @@ export default function FieldsPage() {
             <Input.Search
               placeholder="搜索菜单" allowClear
               onSearch={(v) => {
-                if (!v.trim()) { setExpandedKeys([]); return }
-                const hits = allMenus.filter((m) => m.name.includes(v.trim()) || (m.code || '').includes(v.trim()))
-                const parents = hits.map((m) => m.parent_code).filter((p) => allMenus.some((x) => x.code === p))
-                setExpandedKeys(Array.from(new Set([...hits.map((m) => m.code), ...parents])))
+                setExpandedKeys(computeExpandedKeys(allMenus, v))
               }}
             />
             <div style={{ maxHeight: 'calc(100vh - 300px)', overflow: 'auto', marginTop: 8 }}>

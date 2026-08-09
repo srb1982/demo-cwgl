@@ -29,3 +29,11 @@ export const getMenuPath = (menus: MenuInput[], code: string): string => {
   const parent = menus.find((x) => x.code === m.parent_code)
   return parent ? `${parent.name} / ${m.name}` : m.name
 }
+
+export const computeExpandedKeys = (menus: MenuInput[], keyword: string): string[] => {
+  const k = keyword.trim()
+  if (!k) return []
+  const hits = menus.filter((m) => (m.name || '').includes(k) || (m.code || '').includes(k))
+  const parents = hits.map((m) => m.parent_code).filter((p) => p && menus.some((x) => x.code === p))
+  return Array.from(new Set([...hits.map((m) => m.code), ...parents]))
+}

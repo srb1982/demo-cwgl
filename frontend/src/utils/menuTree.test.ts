@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildMenuTree, getMenuPath } from './menuTree'
+import { buildMenuTree, getMenuPath, computeExpandedKeys } from './menuTree'
 
 const menus = [
   { code: 'system', name: '系统管理', parent_code: '' },
@@ -56,5 +56,32 @@ describe('getMenuPath 菜单路径', () => {
   it('parent_code 指向不存在的父时返回自身名称', () => {
     const m = [{ code: 'a', name: 'A', parent_code: 'gone' }]
     expect(getMenuPath(m, 'a')).toBe('A')
+  })
+})
+
+describe('computeExpandedKeys 菜单搜索展开', () => {
+  it('命中菜单与其父节点均展开', () => {
+    const keys = computeExpandedKeys(menus, '字段')
+    expect(keys).toContain('field_cfg')
+    expect(keys).toContain('system')
+  })
+
+  it('按编码搜索命中', () => {
+    const keys = computeExpandedKeys(menus, 'villager')
+    expect(keys).toContain('villager')
+    expect(keys).toContain('base')
+  })
+
+  it('无命中返回空数组', () => {
+    expect(computeExpandedKeys(menus, '不存在的')).toEqual([])
+  })
+
+  it('空白关键词返回空数组', () => {
+    expect(computeExpandedKeys(menus, '   ')).toEqual([])
+  })
+
+  it('结果去重且父节点自身命中不重复', () => {
+    const keys = computeExpandedKeys(menus, 'system')
+    expect(keys).toEqual(['system'])
   })
 })
