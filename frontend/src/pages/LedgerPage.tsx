@@ -18,7 +18,7 @@ import { subscribeDataChanged } from '../socket'
 import { buildRules } from '../utils/fieldValidation'
 import { typeColor } from '../utils/fieldMeta'
 import { isImageUrl, extractFileName, formatNumber, truncateText } from '../utils/fieldRender'
-import { buildLedgerPayload, buildFormValues } from '../utils/ledgerPayload'
+import { buildLedgerPayload, buildFormValues, buildDefaultValues } from '../utils/ledgerPayload'
 
 export default function LedgerPage() {
   const { code } = useParams()
@@ -188,14 +188,7 @@ export default function LedgerPage() {
 
   const openCreate = () => {
     form.resetFields()
-    const defaults: any = {}
-    for (const f of formFields) {
-      const dv = (f.props || {}).default_value
-      if (dv === undefined || dv === '') continue
-      if (f.data_type === 'date' || f.data_type === 'datetime') continue
-      if (f.data_type === 'boolean') { defaults[f.physical_field] = !!dv; continue }
-      defaults[f.physical_field] = dv
-    }
+    const defaults = buildDefaultValues(formFields)
     if (Object.keys(defaults).length) form.setFieldsValue(defaults)
     setEditing({ id: null })
     setFormOpen(true)

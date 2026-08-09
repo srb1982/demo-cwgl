@@ -33,3 +33,15 @@ export const buildFormValues = (fields: any[], record: Record<string, any>): Rec
   }
   return values
 }
+
+export const buildDefaultValues = (fields: any[]): Record<string, any> => {
+  const defaults: any = {}
+  for (const f of fields) {
+    const dv = (f.props || {}).default_value
+    if (dv === undefined || dv === '') continue
+    if (f.data_type === 'date' || f.data_type === 'datetime') continue
+    if (f.data_type === 'boolean') { defaults[f.physical_field] = !!dv; continue }
+    defaults[f.physical_field] = dv
+  }
+  return defaults
+}

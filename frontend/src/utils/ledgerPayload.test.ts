@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import dayjs from 'dayjs'
-import { buildLedgerPayload, buildFormValues } from './ledgerPayload'
+import { buildLedgerPayload, buildFormValues, buildDefaultValues } from './ledgerPayload'
 
 const fields = [
   { physical_field: 'name', data_type: 'text' },
@@ -73,5 +73,40 @@ describe('buildFormValues 编辑回填构造', () => {
     expect(payload.birth_date).toBe('2024-01-05')
     expect(payload.created_at).toBe('2024-01-05 10:30:00')
     expect(payload.is_poor).toBe(1)
+  })
+})
+
+describe('buildDefaultValues 新建默认值预填', () => {
+  const flds = [
+    { physical_field: 'gender', data_type: 'select', options: ['男', '女'], props: { default_value: '男' } },
+    { physical_field: 'is_poor', data_type: 'boolean', props: { default_value: '1' } },
+    { physical_field: 'name', data_type: 'text' },
+    { physical_field: 'birth_date', data_type: 'date', props: { default_value: '2024-01-01' } },
+    { physical_field: 'remark', data_type: 'text', props: { default_value: '' } },
+    { physical_field: 'score', data_type: 'number', props: { default_value: '90' } },
+  ]
+
+  it('普通字段默认值原样保留', () => {
+    const defaults = buildDefaultValues(flds)
+    expect(defaults.gender).toBe('男')
+    expect(defaults.score).toBe('90')
+  })
+
+  it('boolean 默认值转布尔', () => {
+    expect(buildDefaultValues(flds).is_poor).toBe(true)
+  })
+
+  it('date/datetime 与空字符串默认值跳过', () => {
+    const defaults = buildDefaultValues(flds)
+    expect(defaults.birth_date).toBeUndefined()
+    expect(defaults.remark).toBeUndefined()
+  })
+
+  it('无默认值字段不进入', () => {
+    expect(buildDefaultValues(flds).name).toBeUndefined()
+  })
+
+  it('全部无默认值返回空对象', () => {
+    expect(buildDefaultValues([{ physical_field: 'x', data_type: 'text' }])).toEqual({})
   })
 })
