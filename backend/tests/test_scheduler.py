@@ -7,6 +7,11 @@ class TestSchedulerJobs:
         from app.scheduler import _daily_warning_scan
         _daily_warning_scan()
 
+    def test_warning_scan_success_prints(self, capsys):
+        from app.scheduler import _daily_warning_scan
+        _daily_warning_scan()
+        assert "[预警扫描]" in capsys.readouterr().out
+
     def test_warning_scan_error_handled(self, capsys, monkeypatch):
         from app.scheduler import _daily_warning_scan
 
@@ -39,6 +44,22 @@ class TestSchedulerJobs:
         _clean_old_backups()
         assert not os.path.exists(old)
         assert os.path.exists(new)
+
+    def test_clean_old_backups_error_handled(self, capsys, monkeypatch, tmp_path):
+        from app.scheduler import _clean_old_backups
+
+        def boom_listdir(p):
+            raise OSError("perm denied")
+        monkeypatch.setattr("os.listdir", boom_listdir)
+        monkeypatch.setattr("app.scheduler.config.BACKUP_DIR", str(tmp_path))
+        _clean_old_backups()
+        assert "异常" in capsys.readouterr().out
+
+    def test_init_scheduler_uses_config_backup_time(self, admin_h):
+        from app.database import execute
+        from app.scheduler import init_scheduler
+        execute("UPDATE sys_config SET config_value='01:45' WHERE config_key='backup_time'")
+        init_scheduler()
 
     def test_init_scheduler_idempotent(self):
         from app.scheduler import init_scheduler
