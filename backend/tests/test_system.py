@@ -26,6 +26,14 @@ class TestBackup:
         r = client.post("/api/system/restore", headers=admin_h, json={"name": "no_such.zip"})
         assert r.status_code == 404
 
+    def test_restore_internal_error_500(self, client, admin_h, monkeypatch):
+        def boom(name):
+            raise RuntimeError("zip 损坏")
+        monkeypatch.setattr("app.routers.system.restore_backup", boom)
+        r = client.post("/api/system/restore", headers=admin_h, json={"name": "any.zip"})
+        assert r.status_code == 500
+        assert "恢复失败" in r.json()["detail"]
+
 
 class TestConfig:
     def test_get_config_shape(self, client, admin_h):
@@ -89,3 +97,17 @@ class TestScreen:
 
     def test_screen_viewer_readable(self, client, viewer_h):
         assert client.get("/api/system/screen-config", headers=viewer_h).status_code == 200
+
+
+class TestArchiveYear:
+    def test_archive_year_invalid_400(self, client, admin_h):
+        r = client.post("/api/system/archive-year", headers=admin_h, json={"year": "abc"})
+        assert r.status_code == 400
+
+    def test_archive_year_empty_400(self, client, admin_h):
+        assert client.post("/api/system/archive-year", headers=admin_h,
+                           json={"year": ""}).status_code == 400
+
+    def test_archive_year_forbidden_non_admin(self, client, viewer_h):
+        assert client.post("/api/system/archive-year", headers=viewer_h,
+                           json={"year": "2025"}).status_code == 403

@@ -100,6 +100,36 @@ class TestRelateClassify:
                         json={"menu_code": "villager", "villager_name": "x"})
         assert r.status_code == 404
 
+    def test_classify_missing_404(self, client, admin_h):
+        r = client.post("/api/archive/999999/classify", headers=admin_h,
+                        json={"menu_code": "villager", "villager_name": ""})
+        assert r.status_code == 404
+
+
+class TestOcr:
+    def _upload_jpg(self, client, admin_h):
+        return client.post("/api/archive/upload", headers=admin_h,
+                           files=[("files", ("证件.jpg", b"\xff\xd8\xff fake jpeg", "image/jpeg"))]).json()["items"][0]["id"]
+
+    def test_ocr_not_available_without_paddle(self, client, admin_h):
+        fid = self._upload_jpg(client, admin_h)
+        r = client.post(f"/api/archive/{fid}/ocr", headers=admin_h)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["available"] is False
+
+    def test_ocr_missing_404(self, client, admin_h):
+        assert client.post("/api/archive/999999/ocr", headers=admin_h).status_code == 404
+
+    def test_ocr_non_image_400(self, client, admin_h):
+        fid = _upload(client, admin_h).json()["items"][0]["id"]
+        r = client.post(f"/api/archive/{fid}/ocr", headers=admin_h)
+        assert r.status_code == 400
+        assert "仅支持图片" in r.json()["detail"]
+
+    def test_ocr_viewer_forbidden(self, client, viewer_h):
+        assert client.post("/api/archive/1/ocr", headers=viewer_h).status_code == 403
+
 
 class TestCategoriesAndDelete:
     def test_categories(self, client, admin_h):

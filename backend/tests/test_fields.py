@@ -612,9 +612,12 @@ class TestFieldHelpers:
         assert _unique_code(MENU, "") is None
 
     def test_unique_code_conflict_appends(self, client, admin_h):
-        fid = _get_field(client, admin_h, label="文化程度")
-        assert _unique_code(MENU, "wen_hua_cheng_du") == "wen_hua_cheng_du"
-        assert _unique_code(MENU, "no_such_base_xyz") == "no_such_base_xyz"
+        base = _uniq("base").lower()[:12]
+        execute("INSERT INTO sys_field_config(menu_code,physical_field,display_label,data_type,form_component,is_system,show_in_list,show_in_form,is_required,sort_order,is_deleted,create_time,update_time)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (MENU, base, "占位", "text", "input", 0, 1, 1, 0, 99, 0, "2026-01-01 00:00:00", "2026-01-01 00:00:00"))
+        assert _unique_code(MENU, base) == f"{base}_2"
+        assert _unique_code(MENU, f"{base}_zzz") == f"{base}_zzz"
 
     def test_fmt_bad_props_json(self, client, admin_h):
         fid = _get_field(client, admin_h, label="姓名")["id"]
