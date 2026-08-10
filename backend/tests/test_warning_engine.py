@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from app.database import execute, query_one, query_all
+from app.services.warning_engine import _days_to
 
 
 def _reset():
@@ -92,6 +93,72 @@ class TestRules:
             medical_status=0, pension_status=0, supplement_status=0)
         _scan(client, admin_h)
         assert "fee_unpaid" in _types()
+
+
+class TestYellowThresholds:
+    def _near(self, days):
+        return (date.today() + timedelta(days=days)).isoformat()
+
+    def test_disabled_cert_yellow(self, client, admin_h):
+        _reset()
+        _mk("t_disabled", name="近残", expire_date=self._near(10))
+        _scan(client, admin_h)
+        row = query_one("SELECT level FROM t_warning WHERE warning_type='cert_expire' AND content LIKE '%近残%'")
+        assert row["level"] == "yellow"
+        assert "将于" in query_one("SELECT content FROM t_warning WHERE warning_type='cert_expire' AND content LIKE '%近残%'")["content"]
+
+    def test_elderly_subsidy_yellow(self, client, admin_h):
+        _reset()
+        _mk("t_elderly", name="近老", expire_date=self._near(10))
+        _scan(client, admin_h)
+        row = query_one("SELECT level FROM t_warning WHERE warning_type='subsidy_expire' AND content LIKE '%近老%'")
+        assert row["level"] == "yellow"
+
+    def test_public_expire_yellow(self, client, admin_h):
+        _reset()
+        _mk("t_village_public", public_title="近公示", expire_date=self._near(1))
+        _scan(client, admin_h)
+        row = query_one("SELECT level FROM t_warning WHERE warning_type='public_expire' AND content LIKE '%近公示%'")
+        assert row["level"] == "yellow"
+
+    def test_project_deadline_yellow(self, client, admin_h):
+        _reset()
+        _mk("t_project", project_name="近工程", contract_end=self._near(10))
+        _scan(client, admin_h)
+        row = query_one("SELECT level FROM t_warning WHERE warning_type='project_deadline' AND content LIKE '%近工程%'")
+        assert row["level"] == "yellow"
+
+    def test_job_renew_yellow(self, client, admin_h):
+        _reset()
+        _mk("t_public_job", person_name="近岗", contract_end=self._near(10))
+        _scan(client, admin_h)
+        row = query_one("SELECT level FROM t_warning WHERE warning_type='job_renew' AND content LIKE '%近岗%'")
+        assert row["level"] == "yellow"
+
+    def test_visa_expire_yellow(self, client, admin_h):
+        _reset()
+        _mk("t_oversea", name="近境", visa_expire_date=self._near(10), return_date="2099-01-01", status="境外")
+        _scan(client, admin_h)
+        row = query_one("SELECT level FROM t_warning WHERE warning_type='visa_expire' AND content LIKE '%近境%'")
+        assert row["level"] == "yellow"
+
+
+class TestRobustness:
+    def test_days_to_empty(self):
+        assert _days_to("") is None
+
+    def test_days_to_invalid(self):
+        assert _days_to("not-a-date") is None
+
+    def test_missing_table_skipped(self, client, admin_h, monkeypatch):
+        _reset()
+        monkeypatch.setattr("app.services.warning_engine.LEDGERS", dict(
+            ghost=("幽灵台账", "t_ghost_not_exist", "name"),
+            disabled=("残疾人台账", "t_disabled", "name"),
+        ))
+        _mk("t_disabled", name="容错", expire_date="2020-01-01")
+        msg = _scan(client, admin_h)
+        assert "新增预警 1 条" in msg
 
 
 class TestLifecycle:
