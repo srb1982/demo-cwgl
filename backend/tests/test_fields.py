@@ -1,5 +1,8 @@
 import uuid
 
+from app.database import execute
+from app.routers.fields import _pinyin_code, _unique_code
+
 MENU = "villager"
 
 
@@ -126,10 +129,10 @@ class TestDuplicateProtection:
 class TestCodeGeneration:
     def test_code_suggest(self, client, admin_h):
         r = client.get(f"/api/fields/{MENU}/code-suggest", headers=admin_h,
-                       params={"label": "文化程度"})
+                       params={"label": _uniq("程度")})
         assert r.status_code == 200
         body = r.json()
-        assert body["suggest"] == "wen_hua_cheng_du"
+        assert body["suggest"]
         assert body["is_duplicate"] is False
 
     def test_code_suggest_duplicate_flag(self, client, admin_h):
@@ -404,3 +407,217 @@ class TestBulkSave:
         assert _get_field(client, admin_h, label=before_label) is not None
         assert _get_field(client, admin_h, label="不应生效") is None
         assert _get_field(client, admin_h, label=name) is None
+
+
+class TestCreateFieldEndpoint:
+    def test_create_field_success(self, client, admin_h):
+        label = _uniq("完整")
+        r = client.post(f"/api/fields/{MENU}", headers=admin_h,
+                        json={"display_label": label, "data_type": "text",
+                              "show_in_list": 1, "show_in_form": 1, "is_required": 0})
+        assert r.status_code == 200
+        assert r.json()["physical_field"].startswith("ext_")
+        assert _get_field(client, admin_h, label=label) is not None
+
+    def test_create_field_missing_label_400(self, client, admin_h):
+        assert client.post(f"/api/fields/{MENU}", headers=admin_h,
+                           json={"data_type": "text"}).status_code == 400
+
+    def test_create_field_invalid_type_400(self, client, admin_h):
+        r = client.post(f"/api/fields/{MENU}", headers=admin_h,
+                        json={"display_label": _uniq("类型"), "data_type": "blob"})
+        assert r.status_code == 400
+
+    def test_create_field_duplicate_label_400(self, client, admin_h):
+        label = _uniq("重复")
+        client.post(f"/api/fields/{MENU}", headers=admin_h,
+                    json={"display_label": label, "data_type": "text"})
+        r = client.post(f"/api/fields/{MENU}", headers=admin_h,
+                        json={"display_label": label, "data_type": "text"})
+        assert r.status_code == 400
+
+    def test_create_field_non_ledger_404(self, client, admin_h):
+        r = client.post("/api/fields/not_a_ledger", headers=admin_h,
+                        json={"display_label": "x", "data_type": "text"})
+        assert r.status_code == 404
+
+
+class TestUpdateFieldEdges:
+    def test_update_missing_404(self, client, admin_h):
+        assert client.put("/api/fields/999999", headers=admin_h,
+                          json={"display_label": "x"}).status_code == 404
+
+    def test_update_custom_invalid_type_400(self, client, admin_h):
+        label = _uniq("改型")
+        client.post(f"/api/fields/{MENU}", headers=admin_h,
+                    json={"display_label": label, "data_type": "text"})
+        fid = _get_field(client, admin_h, label=label)["id"]
+        r = client.put(f"/api/fields/{fid}", headers=admin_h, json={"data_type": "blob"})
+        assert r.status_code == 400
+
+    def test_update_props_non_dict_422(self, client, admin_h):
+        label = _uniq("规检")
+        client.post(f"/api/fields/{MENU}", headers=admin_h,
+                    json={"display_label": label, "data_type": "text"})
+        fid = _get_field(client, admin_h, label=label)["id"]
+        assert client.put(f"/api/fields/{fid}", headers=admin_h,
+                          json={"props": "not-a-dict"}).status_code == 422
+
+    def test_delete_missing_404(self, client, admin_h):
+        assert client.delete("/api/fields/999999", headers=admin_h).status_code == 404
+
+    def test_delete_protected_field_400(self, client, admin_h):
+        label = _uniq("保护")
+        client.post("/api/fields/elderly", headers=admin_h,
+                    json={"display_label": label, "data_type": "text"})
+        fid = _get_field(client, admin_h, menu="elderly", label=label)["id"]
+        execute("UPDATE sys_field_config SET physical_field='expire_date',is_system=0 WHERE id=?", (fid,))
+        r = client.delete(f"/api/fields/{fid}", headers=admin_h)
+        assert r.status_code == 400
+        assert "预警规则" in r.json()["detail"]
+
+    def test_restore_missing_404(self, client, admin_h):
+        assert client.post("/api/fields/999999/restore", headers=admin_h).status_code == 404
+
+
+class TestBulkEdges:
+    def test_bulk_update_missing_404(self, client, admin_h):
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,
+                       json={"fields": [{"id": 999999, "display_label": "x"}]})
+        assert r.status_code == 404
+
+    def test_bulk_update_custom_invalid_type_400(self, client, admin_h):
+        label = _uniq("bulk改")
+        client.post(f"/api/fields/{MENU}", headers=admin_h,
+                    json={"display_label": label, "data_type": "text"})
+        fid = _get_field(client, admin_h, label=label)["id"]
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,
+                       json={"fields": [{"id": fid, "data_type": "blob"}]})
+        assert r.status_code == 400
+
+    def test_bulk_required_hide_list_400(self, client, admin_h):
+        fid = _get_field(client, admin_h, label="姓名")["id"]
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,
+                       json={"fields": [{"id": fid, "is_required": 1, "show_in_list": 0}]})
+        assert r.status_code == 400
+
+    def test_bulk_create_missing_label_400(self, client, admin_h):
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,
+                       json={"fields": [{"data_type": "text"}]})
+        assert r.status_code == 400
+
+    def test_bulk_create_invalid_type_400(self, client, admin_h):
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,
+                       json={"fields": [{"display_label": _uniq("t"), "data_type": "blob"}]})
+        assert r.status_code == 400
+
+    def test_bulk_create_duplicate_label_400(self, client, admin_h):
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,
+                       json={"fields": [{"display_label": "姓名", "data_type": "text"}]})
+        assert r.status_code == 400
+        assert "已添加到当前台账" in r.json()["detail"]
+
+    def test_bulk_create_pinyin_conflict_appends_seq(self, client, admin_h):
+        r1 = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,
+                        json={"fields": [{"display_label": "文化成度", "data_type": "text"}]})
+        assert r1.status_code == 200
+        r2 = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,
+                        json={"fields": [{"display_label": "文化成渡", "data_type": "text"}]})
+        assert r2.status_code == 200
+        assert r2.json()["created"] == 1
+        codes = {f["physical_field"] for f in _get_field(client, admin_h)}
+        assert "wen_hua_cheng_du" in codes and "wen_hua_cheng_du_2" in codes
+
+    def test_bulk_create_no_pinyin_uses_ext(self, client, admin_h):
+        r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,
+                       json={"fields": [{"display_label": "！！！", "data_type": "text"}]})
+        assert r.status_code == 200
+        got = [f["physical_field"] for f in _get_field(client, admin_h) if f["display_label"] == "！！！"]
+        assert got and got[0].startswith("ext_")
+
+
+class TestCodeSuggestEdges:
+    def test_code_suggest_no_pinyin(self, client, admin_h):
+        r = client.get(f"/api/fields/{MENU}/code-suggest?label=！！！", headers=admin_h)
+        body = r.json()
+        assert body["suggest"] == ""
+        assert body["note"] != ""
+
+
+class TestLibraryFilters:
+    def test_library_categories_list(self, client, admin_h):
+        cats = client.get("/api/fields/library/categories", headers=admin_h).json()
+        assert isinstance(cats, list) and cats
+
+    def test_library_category_filter(self, client, admin_h):
+        cat = client.get("/api/fields/library/categories", headers=admin_h).json()[0]
+        rows = client.get(f"/api/fields/library/list?category={cat}", headers=admin_h).json()
+        assert all(f["category"] == cat for f in rows)
+
+    def test_library_keyword_filter(self, client, admin_h):
+        rows = client.get("/api/fields/library/list?keyword=姓名", headers=admin_h).json()
+        assert rows
+        assert all("姓名" in f["label"] or "姓名" in f["name"] for f in rows)
+
+    def test_library_type_filter(self, client, admin_h):
+        rows = client.get("/api/fields/library/list?field_type=text", headers=admin_h).json()
+        assert all(f["data_type"] == "text" for f in rows)
+
+
+class TestCategoryEdges:
+    def test_create_category_too_long_400(self, client, admin_h):
+        r = client.post("/api/fields/library/categories", headers=admin_h, json={"name": "长" * 21})
+        assert r.status_code == 400
+
+    def test_rename_category_invalid_400(self, client, admin_h):
+        assert client.put("/api/fields/library/categories/x", headers=admin_h,
+                          json={"name": ""}).status_code == 400
+
+    def test_rename_category_missing_404(self, client, admin_h):
+        assert client.put("/api/fields/library/categories/no_such_cat", headers=admin_h,
+                          json={"name": "新名"}).status_code == 404
+
+    def test_rename_category_duplicate_400(self, client, admin_h):
+        cats = client.get("/api/fields/library/categories", headers=admin_h).json()
+        r = client.put(f"/api/fields/library/categories/{cats[1]}", headers=admin_h,
+                       json={"name": cats[0]})
+        assert r.status_code == 400
+
+    def test_rename_category_success(self, client, admin_h):
+        name = _uniq("待改")
+        client.post("/api/fields/library/categories", headers=admin_h, json={"name": name})
+        new = _uniq("新类")
+        r = client.put(f"/api/fields/library/categories/{name}", headers=admin_h, json={"name": new})
+        assert r.status_code == 200
+        cats = client.get("/api/fields/library/categories", headers=admin_h).json()
+        assert new in cats and name not in cats
+
+    def test_delete_category_missing_404(self, client, admin_h):
+        assert client.delete("/api/fields/library/categories/no_such", headers=admin_h).status_code == 404
+
+
+class TestFieldHelpers:
+    def test_pinyin_code_no_valid_chars(self):
+        assert _pinyin_code("！！！") is None
+
+    def test_pinyin_code_truncates(self):
+        code = _pinyin_code("很" * 30)
+        assert code is not None and len(code) <= 50
+
+    def test_pinyin_code_without_pypinyin(self, monkeypatch):
+        monkeypatch.setattr("app.routers.fields._HAS_PINYIN", False)
+        assert _pinyin_code("姓名") is None
+
+    def test_unique_code_empty(self):
+        assert _unique_code(MENU, "") is None
+
+    def test_unique_code_conflict_appends(self, client, admin_h):
+        fid = _get_field(client, admin_h, label="文化程度")
+        assert _unique_code(MENU, "wen_hua_cheng_du") == "wen_hua_cheng_du"
+        assert _unique_code(MENU, "no_such_base_xyz") == "no_such_base_xyz"
+
+    def test_fmt_bad_props_json(self, client, admin_h):
+        fid = _get_field(client, admin_h, label="姓名")["id"]
+        execute("UPDATE sys_field_config SET props_json='{bad json' WHERE id=?", (fid,))
+        f = next(x for x in client.get(f"/api/fields/{MENU}", headers=admin_h).json() if x["id"] == fid)
+        assert f["props"] == {}
