@@ -1,4 +1,6 @@
+import io
 import uuid
+from openpyxl import Workbook
 
 MENU = "villager"
 
@@ -143,3 +145,130 @@ def _create(client, headers, **fields):
     r = client.post(f"/api/ledger/{MENU}", headers=headers, json=payload)
     assert r.status_code == 200, r.text
     return r.json()["id"]
+
+
+def _xlsx(headers, rows):
+    wb = Workbook()
+    ws = wb.active
+    ws.append(headers)
+    for row in rows:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+class TestLedgerFields:
+    def test_fields_metadata(self, client, admin_h):
+        r = client.get(f"/api/ledger/{MENU}/fields", headers=admin_h)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["menu"]["code"] == MENU
+        assert body["fields"] and body["form_fields"] and body["list_fields"]
+        assert all("physical_field" in f for f in body["fields"])
+
+    def test_unknown_menu_fields_404(self, client, admin_h):
+        assert client.get("/api/ledger/no_such/fields", headers=admin_h).status_code == 404
+
+
+class TestAgeEdge:
+    def test_age_autofill_15digit_idcard(self, client, admin_h):
+        item_id = _create(client, admin_h, id_card="110101900101123")
+        detail = client.get(f"/api/ledger/{MENU}/detail/{item_id}", headers=admin_h).json()["item"]
+        assert detail.get("age") is not None
+        assert 0 < detail["age"] <= 150
+
+    def test_party_age_autofilled(self, client, admin_h):
+        r = client.post("/api/ledger/party_member", headers=admin_h,
+                        json={"name": "党员甲", "id_card": _mk_idcard(), "gender": "男", "join_date": "2000-07-01"})
+        assert r.status_code == 200, r.text
+        detail = client.get(f"/api/ledger/party_member/detail/{r.json()['id']}", headers=admin_h).json()["item"]
+        assert detail.get("party_age") is not None
+        assert detail["party_age"] >= 20
+
+    def test_party_age_skips_when_provided(self, client, admin_h):
+        r = client.post("/api/ledger/party_member", headers=admin_h,
+                        json={"name": "党员乙", "id_card": _mk_idcard(), "gender": "男",
+                              "join_date": "2000-07-01", "party_age": 10})
+        detail = client.get(f"/api/ledger/party_member/detail/{r.json()['id']}", headers=admin_h).json()["item"]
+        assert detail["party_age"] == 10
+
+    def test_invalid_idcard_no_age(self, client, admin_h):
+        item_id = _create(client, admin_h, id_card="12345")
+        detail = client.get(f"/api/ledger/{MENU}/detail/{item_id}", headers=admin_h).json()["item"]
+        assert detail.get("age") is None
+
+
+class TestExportImport:
+    def test_export_xlsx(self, client, admin_h):
+        r = client.get(f"/api/ledger/{MENU}/export", headers=admin_h)
+        assert r.status_code == 200
+        assert "spreadsheetml" in r.headers["content-type"]
+
+    def test_export_template_roundtrip(self, client, admin_h):
+        r = client.post(f"/api/ledger/{MENU}/templates", headers=admin_h, json={"fields": ["name"]})
+        assert r.status_code == 200
+        tpls = client.get(f"/api/ledger/{MENU}/templates", headers=admin_h).json()
+        assert tpls["templates"] == ["name"]
+        r = client.get(f"/api/ledger/{MENU}/export?tpl=1", headers=admin_h)
+        assert r.status_code == 200
+
+    def test_import_success(self, client, admin_h):
+        card = _mk_idcard()
+        data = _xlsx(["姓名", "身份证号码"], [["导入甲", card]])
+        r = client.post(f"/api/ledger/{MENU}/import", headers=admin_h,
+                        files={"file": ("导入.xlsx", data,
+                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+        assert r.status_code == 200
+        assert "成功 1 条" in r.json()["message"]
+
+    def test_import_duplicate_idcard_skipped(self, client, admin_h):
+        card = _mk_idcard()
+        _create(client, admin_h, id_card=card)
+        data = _xlsx(["姓名", "身份证号码"], [["重复卡", card], ["正常乙", _mk_idcard()]])
+        r = client.post(f"/api/ledger/{MENU}/import", headers=admin_h,
+                        files={"file": ("导入.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+        assert r.status_code == 200
+        assert "重复跳过 1 条" in r.json()["message"]
+
+    def test_import_bad_header_400(self, client, admin_h):
+        data = _xlsx(["列甲", "列乙"], [["x", "y"]])
+        r = client.post(f"/api/ledger/{MENU}/import", headers=admin_h,
+                        files={"file": ("bad.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+        assert r.status_code == 400
+
+    def test_import_invalid_file_400(self, client, admin_h):
+        r = client.post(f"/api/ledger/{MENU}/import", headers=admin_h,
+                        files={"file": ("a.xlsx", b"not a real xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+        assert r.status_code == 400
+
+    def test_import_empty_rows_400(self, client, admin_h):
+        data = _xlsx(["姓名", "身份证号码"], [])
+        r = client.post(f"/api/ledger/{MENU}/import", headers=admin_h,
+                        files={"file": ("empty.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+        assert r.status_code == 400
+
+
+class TestPrintAndUpload:
+    def test_print_item(self, client, admin_h):
+        item_id = _create(client, admin_h, name="打印甲")
+        r = client.get(f"/api/ledger/{MENU}/print/{item_id}", headers=admin_h)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["menu_name"] == "村民信息台账"
+        assert body["item"]["id"] == item_id
+        assert body["fields"] and all(f["show_in_form"] for f in body["fields"])
+
+    def test_print_missing_404(self, client, admin_h):
+        assert client.get(f"/api/ledger/{MENU}/print/999999", headers=admin_h).status_code == 404
+
+    def test_upload_image(self, client, admin_h):
+        r = client.post("/api/ledger/upload-image", headers=admin_h,
+                        files={"file": ("photo.png", b"\x89PNG\r\n\x1a\n", "image/png")})
+        assert r.status_code == 200
+        assert r.json()["url"].startswith("/api/files/")
+
+    def test_upload_bad_ext_400(self, client, admin_h):
+        r = client.post("/api/ledger/upload-image", headers=admin_h,
+                        files={"file": ("a.sh", b"#!/bin/sh", "text/x-shellscript")})
+        assert r.status_code == 400
