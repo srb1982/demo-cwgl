@@ -58,4 +58,4 @@ Entries discovered by the Agent during task execution should follow this format:
 - Context: Discovered by Agent while 为字段配置模块补充前端单元测试
 - Category: Testing Methods
 - Instructions:
-  - 前端单元测试：`cd frontend && npm test`（vitest run，node 环境，vite.config.ts 的 test 段配置）。字段校验纯逻辑集中在 src/utils/fieldValidation.ts（buildRules/formatPatterns），对应 src/utils/fieldValidation.test.ts 12 例。新增前端改动后跑该套件与 `npx tsc --noEmit` 回归。
+  - 前端单元测试：`cd frontend && npm test`（vitest run，node 环境，vite.config.ts 的 test 段配置）。纯逻辑集中在 src/utils/ 下 8 个模块共 87 例（fieldValidation/fieldMeta/menuTree/fieldRender/fieldProps/ledgerPayload/fieldLibrary/tableFilters），页面组件复用这些函数后不再内联业务规则。新增前端改动后跑该套件 + `npx tsc --noEmit` + `npm run build` 回归。
