@@ -77,6 +77,14 @@ class TestCrud:
         assert r.status_code == 400
         assert "内置管理员" in r.json()["detail"]
 
+    def test_update_invalid_role_400(self, client, admin_h):
+        username, _ = _create(client, admin_h)
+        uid = _uid(client, admin_h, username)
+        r = client.put(f"/api/users/{uid}", headers=admin_h,
+                       json={"real_name": "x", "role": "hacker", "phone": "", "status": 1})
+        assert r.status_code == 400
+        assert "角色" in r.json()["detail"]
+
 
 class TestPassword:
     def test_reset_password(self, client, admin_h):

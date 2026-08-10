@@ -272,3 +272,66 @@ class TestPrintAndUpload:
         r = client.post("/api/ledger/upload-image", headers=admin_h,
                         files={"file": ("a.sh", b"#!/bin/sh", "text/x-shellscript")})
         assert r.status_code == 400
+
+
+class TestAgeBoundary:
+    def test_calc_age_empty_input(self):
+        from app.routers.ledger import _calc_age_from_idcard
+        assert _calc_age_from_idcard(None) is None
+        assert _calc_age_from_idcard("") is None
+
+    def test_calc_party_age_edge(self):
+        from app.routers.ledger import _calc_party_age
+        assert _calc_party_age(None) is None
+        assert _calc_party_age("") is None
+        assert _calc_party_age("not-a-date") is None
+
+    def test_no_idcard_no_age(self, client, admin_h):
+        r = client.post(f"/api/ledger/{MENU}", headers=admin_h, json={"name": "无证甲"})
+        assert r.status_code == 200, r.text
+        detail = client.get(f"/api/ledger/{MENU}/detail/{r.json()['id']}", headers=admin_h).json()["item"]
+        assert detail.get("age") is None
+
+    def test_invalid_birth_date_no_age(self, client, admin_h):
+        item_id = _create(client, admin_h, id_card="110101199013011234")
+        detail = client.get(f"/api/ledger/{MENU}/detail/{item_id}", headers=admin_h).json()["item"]
+        assert detail.get("age") is None
+
+    def test_party_no_join_date(self, client, admin_h):
+        r = client.post("/api/ledger/party_member", headers=admin_h,
+                        json={"name": "党无日", "id_card": _mk_idcard(), "gender": "男"})
+        detail = client.get(f"/api/ledger/party_member/detail/{r.json()['id']}", headers=admin_h).json()["item"]
+        assert detail.get("party_age") is None
+
+    def test_party_invalid_join_date(self, client, admin_h):
+        r = client.post("/api/ledger/party_member", headers=admin_h,
+                        json={"name": "党乱日", "id_card": _mk_idcard(), "gender": "男", "join_date": "abc"})
+        detail = client.get(f"/api/ledger/party_member/detail/{r.json()['id']}", headers=admin_h).json()["item"]
+        assert detail.get("party_age") is None
+
+
+class TestCrudEdges:
+    def test_update_missing_404(self, client, admin_h):
+        r = client.put(f"/api/ledger/{MENU}/999999", headers=admin_h, json={"name": "不存在"})
+        assert r.status_code == 404
+
+    def test_templates_empty_without_config(self, client, admin_h):
+        from app.database import execute
+        execute("DELETE FROM sys_config WHERE config_key=?", (f"export_tpl_{MENU}",))
+        r = client.get(f"/api/ledger/{MENU}/templates", headers=admin_h)
+        assert r.status_code == 200
+        assert r.json()["templates"] == []
+
+    def test_export_with_empty_tpl_config(self, client, admin_h):
+        client.post(f"/api/ledger/{MENU}/templates", headers=admin_h, json={"fields": []})
+        r = client.get(f"/api/ledger/{MENU}/export?tpl=1", headers=admin_h)
+        assert r.status_code == 200
+
+    def test_import_skips_blank_middle_row(self, client, admin_h):
+        data = _xlsx(["姓名", "身份证号码"],
+                     [["前甲", _mk_idcard()], [None, None], ["后乙", _mk_idcard()]])
+        r = client.post(f"/api/ledger/{MENU}/import", headers=admin_h,
+                        files={"file": ("中空.xlsx", data,
+                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+        assert r.status_code == 200
+        assert "成功 2 条" in r.json()["message"]

@@ -517,16 +517,18 @@ class TestBulkEdges:
         assert r.status_code == 400
         assert "已添加到当前台账" in r.json()["detail"]
 
-    def test_bulk_create_pinyin_conflict_appends_seq(self, client, admin_h):
+    def test_bulk_create_pinyin_conflict_deep(self, client, admin_h):
         r1 = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,
                         json={"fields": [{"display_label": "文化成度", "data_type": "text"}]})
         assert r1.status_code == 200
         r2 = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,
                         json={"fields": [{"display_label": "文化成渡", "data_type": "text"}]})
         assert r2.status_code == 200
-        assert r2.json()["created"] == 1
+        r3 = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,
+                        json={"fields": [{"display_label": "文华成度", "data_type": "text"}]})
+        assert r3.status_code == 200
         codes = {f["physical_field"] for f in _get_field(client, admin_h)}
-        assert "wen_hua_cheng_du" in codes and "wen_hua_cheng_du_2" in codes
+        assert "wen_hua_cheng_du_3" in codes
 
     def test_bulk_create_no_pinyin_uses_ext(self, client, admin_h):
         r = client.put(f"/api/fields/{MENU}/bulk", headers=admin_h,

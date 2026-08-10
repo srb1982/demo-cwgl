@@ -50,3 +50,15 @@ class TestFeeTolerance:
         from app.routers.dashboard import _group_count
         rows = _group_count("t_villager_info", "gender", "gender IS NOT NULL")
         assert isinstance(rows, list)
+
+
+class TestWarningBoard:
+    def test_green_warning_counts(self, client, admin_h):
+        from datetime import datetime
+        from app.database import execute
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        execute("INSERT INTO t_warning(menu_code,ledger_name,item_id,warning_type,content,level,status,create_time)"
+                " VALUES('villager','村民信息台账',1,'sample','绿色提示','green','pending',?)", (now,))
+        d = client.get("/api/dashboard/overview", headers=admin_h).json()
+        assert d["warning"]["green"] >= 1
+        assert d["warning"]["pending"] >= 1

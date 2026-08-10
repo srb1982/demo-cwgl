@@ -74,6 +74,9 @@ class TestHandle:
         assert client.post(f"/api/warnings/{wid}/postpone", headers=manager_h, json={"remark": "延后"}).status_code == 200
         assert query_one("SELECT status FROM t_warning WHERE id=?", (wid,))["status"] == "postponed"
 
+    def test_postpone_missing_404(self, client, admin_h):
+        assert client.post("/api/warnings/999999/postpone", headers=admin_h, json={}).status_code == 404
+
     def test_handle_missing_404(self, client, admin_h):
         assert client.post("/api/warnings/999999/handle", headers=admin_h, json={}).status_code == 404
 

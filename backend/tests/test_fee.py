@@ -27,6 +27,13 @@ class TestMeta:
         groups = client.get("/api/fee/groups", headers=admin_h).json()
         assert "一组" in groups
 
+    def test_is_paid_edge_cases(self):
+        from app.routers.fee import _is_paid
+        assert _is_paid(None) is False
+        assert _is_paid("abc") is False
+        assert _is_paid("0") is False
+        assert _is_paid("5.5") is True
+
 
 class TestSummary:
     def test_summary_counts(self, client, admin_h):
@@ -49,6 +56,18 @@ class TestSummary:
         per = r.json()["per_type"]
         assert per["medical_status"]["paid"] == 1
         assert per["pension_status"]["unpaid"] == 1
+
+    def test_summary_default_latest_year(self, client, admin_h):
+        _mk_fee(client, admin_h, fee_year="Z999", village_group="一组")
+        r = client.get("/api/fee/summary", headers=admin_h)
+        assert r.status_code == 200
+        assert r.json()["overview"]["total"] >= 1
+
+    def test_unpaid_default_year(self, client, admin_h):
+        _mk_fee(client, admin_h, fee_year="Z999")
+        r = client.get("/api/fee/unpaid", headers=admin_h)
+        assert r.status_code == 200
+        assert len(r.json()) >= 1
 
     def test_groups_aggregate(self, client, admin_h):
         y = _uniq("Y")
