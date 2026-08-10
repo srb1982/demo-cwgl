@@ -1,4 +1,8 @@
+import os
 import uuid
+
+from app.config import UPLOAD_DIR
+from app.database import execute, query_one
 
 PDF = b"%PDF-1.4 fake content"
 
@@ -111,3 +115,43 @@ class TestCategoriesAndDelete:
 
     def test_delete_missing_404(self, client, admin_h):
         assert client.delete("/api/archive/999999", headers=admin_h).status_code == 404
+
+
+class TestDownload:
+    def test_download_success(self, client, admin_h):
+        fid = _upload(client, admin_h).json()["items"][0]["id"]
+        r = client.get(f"/api/archive/download/{fid}", headers=admin_h)
+        assert r.status_code == 200
+        assert r.content == PDF
+
+    def test_download_missing_404(self, client, admin_h):
+        assert client.get("/api/archive/download/999999", headers=admin_h).status_code == 404
+
+    def test_download_lost_physical_404(self, client, admin_h):
+        fid = _upload(client, admin_h).json()["items"][0]["id"]
+        fp = os.path.join(UPLOAD_DIR, query_one("SELECT file_path FROM t_file_archive WHERE id=?", (fid,))["file_path"])
+        os.remove(fp)
+        r = client.get(f"/api/archive/download/{fid}", headers=admin_h)
+        assert r.status_code == 404
+        assert "丢失" in r.json()["detail"]
+
+    def test_viewer_can_download(self, client, admin_h, viewer_h):
+        fid = _upload(client, admin_h).json()["items"][0]["id"]
+        assert client.get(f"/api/archive/download/{fid}", headers=viewer_h).status_code == 200
+
+
+class TestScan:
+    def test_scan_reclassifies_uncategorized(self, client, admin_h):
+        fid = _upload(client, admin_h, filename="村民花名册.pdf").json()["items"][0]["id"]
+        execute("UPDATE t_file_archive SET category='' WHERE id=?", (fid,))
+        r = client.post("/api/archive/scan", headers=admin_h)
+        assert r.status_code == 200
+        assert "1 个文件已匹配归类" in r.json()["message"]
+        row = query_one("SELECT category FROM t_file_archive WHERE id=?", (fid,))
+        assert row["category"] == "villager"
+
+    def test_scan_no_match(self, client, admin_h):
+        _upload(client, admin_h, filename="普通文档.pdf")
+        r = client.post("/api/archive/scan", headers=admin_h)
+        assert r.status_code == 200
+        assert "0 个文件已匹配" in r.json()["message"]

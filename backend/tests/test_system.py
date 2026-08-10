@@ -60,6 +60,23 @@ class TestLogs:
         assert r.status_code == 200
         assert r.json()["total"] >= 0
 
+    def test_logs_module_filter(self, client, admin_h):
+        r = client.get("/api/system/logs?module=认证", headers=admin_h)
+        assert r.status_code == 200
+        for row in r.json()["list"]:
+            assert "认证" in row["module"]
+
+    def test_logs_keyword_filters_actual_rows(self, client):
+        client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
+        client.post("/api/auth/login", json={"username": "admin", "password": "bad"})
+        r = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"},)
+        token = r.json()["token"]
+        h = {"Authorization": f"Bearer {token}"}
+        body = client.get("/api/system/logs?keyword=登录失败", headers=h).json()
+        assert body["total"] >= 1
+        for row in body["list"]:
+            assert "登录失败" in row["detail"]
+
 
 class TestScreen:
     def test_screen_config_roundtrip(self, client, admin_h):
