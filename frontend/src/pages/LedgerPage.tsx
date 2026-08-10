@@ -17,7 +17,7 @@ import { isWritable } from '../store/auth'
 import { subscribeDataChanged } from '../socket'
 import { buildRules } from '../utils/fieldValidation'
 import { typeColor } from '../utils/fieldMeta'
-import { isImageUrl, extractFileName, formatNumber, truncateText } from '../utils/fieldRender'
+import { isImageUrl, extractFileName, formatNumber, truncateText, buildPrintHtml } from '../utils/fieldRender'
 import { buildLedgerPayload, buildFormValues, buildDefaultValues } from '../utils/ledgerPayload'
 import { extractFilters } from '../utils/tableFilters'
 
@@ -237,13 +237,7 @@ export default function LedgerPage() {
     const res: any = await getPrintData(code!, id)
     const win = window.open('', '_blank')
     if (!win) return
-    const rows = res.fields
-      .map((f: any) => `<tr><td style="padding:8px;border:1px solid #ccc;background:#f5f5f5;width:140px">${f.display_label}</td><td style="padding:8px;border:1px solid #ccc">${res.item[f.physical_field] ?? ''}</td></tr>`)
-      .join('')
-    win.document.write(
-      `<html><head><meta charset="utf-8"><title>${res.menu_name}打印</title><style>body{font-family:SimSun,serif;padding:20px}</style></head>` +
-      `<body><h2 style="text-align:center">${res.menu_name}登记表</h2><table style="border-collapse:collapse;width:100%">${rows}</table></body></html>`
-    )
+    win.document.write(buildPrintHtml(res.fields, res.item, res.menu_name))
     win.document.close()
     win.print()
   }
