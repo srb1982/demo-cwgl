@@ -40,6 +40,10 @@ export const getTemplates = (menuCode: string) => request.get(`/ledger/${menuCod
 export const saveTemplate = (menuCode: string, fields: string[]) => request.post(`/ledger/${menuCode}/templates`, { fields })
 export const getPrintData = (menuCode: string, id: number) => request.get(`/ledger/${menuCode}/print/${id}`)
 export const checkDuplicates = (menuCode: string) => request.get(`/ledger/${menuCode}/duplicates`)
+export const checkHousehold = (menuCode: string, householdNo: string, excludeId?: number) =>
+  request.get(`/ledger/${menuCode}/household-check`, { params: { household_no: householdNo, exclude_id: excludeId } })
+export const transferHouseholder = (menuCode: string, data: any) =>
+  request.post(`/ledger/${menuCode}/transfer-householder`, data)
 
 export const getArchiveList = (params: any) => request.get('/archive', { params })
 export const uploadArchive = (formData: FormData) => request.post('/archive/upload', formData)

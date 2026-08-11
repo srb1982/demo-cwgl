@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Table, Button, Space, Input, Modal, Form, Select, DatePicker, InputNumber, Upload,
-  App, Tag, Dropdown, Checkbox, Image, Popconfirm, Typography, Switch,
+  App, Tag, Dropdown, Checkbox, Image, Popconfirm, Typography, Switch, Alert,
 } from 'antd'
 import {
   PlusOutlined, ReloadOutlined, ImportOutlined, ExportOutlined, UploadOutlined,
@@ -12,6 +12,7 @@ import dayjs from 'dayjs'
 import {
   getLedgerFields, getLedgerData, getLedgerDetail, createLedgerItem, updateLedgerItem,
   deleteLedgerItem, importLedger, getTemplates, saveTemplate, getPrintData, uploadImage, checkDuplicates,
+  checkHousehold, transferHouseholder,
 } from '../api'
 import { isWritable } from '../store/auth'
 import { subscribeDataChanged } from '../socket'
@@ -46,6 +47,10 @@ export default function LedgerPage() {
   const writable = isWritable()
   const importRef = useRef<any>(null)
   const [dupResult, setDupResult] = useState<any>(null)
+  const [editingFamily, setEditingFamily] = useState<any>(null)
+  const [transferOpen, setTransferOpen] = useState(false)
+  const [transferInfo, setTransferInfo] = useState<any>(null)
+  const isFamilyLedger = code === 'villager'
 
   const loadMeta = useCallback(async () => {
     if (!code) return
@@ -118,6 +123,9 @@ export default function LedgerPage() {
     if (dup || dupH) {
       return <Typography.Text type="danger">{val} <Tag color="red">重复</Tag></Typography.Text>
     }
+    if (isFamilyLedger && field.physical_field === 'name' && record.householder === '是') {
+      return <Space size={4}>{val ?? '-'}<Tag color="gold">户主</Tag></Space>
+    }
     return val ?? '-'
   }
 
@@ -162,7 +170,7 @@ export default function LedgerPage() {
               </Button>
               <Popconfirm
                 title="确认删除该记录？删除后不可恢复"
-                onConfirm={() => handleDelete(record.id)}
+                onConfirm={() => handleDelete(record.id, record)}
               >
                 <Button size="small" danger icon={<DeleteOutlined />} />
               </Popconfirm>
@@ -183,7 +191,14 @@ export default function LedgerPage() {
     const res: any = await getLedgerDetail(code!, id)
     const values = buildFormValues(res.fields, res.item)
     form.setFieldsValue(values)
-    setEditing({ id })
+    setEditing({ id, record: res.item })
+    setEditingFamily(null)
+    if (isFamilyLedger && res.item?.household_no) {
+      try {
+        const info: any = await checkHousehold(code!, res.item.household_no, id)
+        setEditingFamily(info.enabled ? info : null)
+      } catch (e) { /* 静默，表单提示退化为空 */ }
+    }
     setFormOpen(true)
   }
 
@@ -192,6 +207,7 @@ export default function LedgerPage() {
     const defaults = buildDefaultValues(formFields)
     if (Object.keys(defaults).length) form.setFieldsValue(defaults)
     setEditing({ id: null })
+    setEditingFamily(null)
     setFormOpen(true)
   }
 
@@ -209,9 +225,48 @@ export default function LedgerPage() {
     loadData()
   }
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: number, record: any) => {
+    if (isFamilyLedger && record?.household_no && record?.householder === '是') {
+      try {
+        const info: any = await checkHousehold(code!, record.household_no, id)
+        if (info.enabled) {
+          if (info.is_single) {
+            modal.confirm({
+              title: '确认删除',
+              content: '该成员为单人户的户主，删除后此户将自动注销，确认删除吗？',
+              okType: 'danger',
+              onOk: () => doDelete(id),
+            })
+            return
+          }
+          setTransferInfo({ record, members: info.members || [] })
+          setTransferOpen(true)
+          return
+        }
+      } catch (e) { /* 后端兜底校验 */ }
+    }
+    modal.confirm({
+      title: '确认删除该记录？删除后不可恢复',
+      okType: 'danger',
+      onOk: () => doDelete(id),
+    })
+  }
+
+  const doDelete = async (id: number) => {
     await deleteLedgerItem(code!, id)
     message.success('已删除')
+    loadData()
+  }
+
+  const doTransfer = async (member: any) => {
+    if (!transferInfo?.record) return
+    await transferHouseholder(code!, {
+      household_no: transferInfo.record.household_no,
+      current_holder_id: transferInfo.record.id,
+      new_holder_id: member.id,
+    })
+    message.success('户主交接成功，现在可以删除该成员了')
+    setTransferOpen(false)
     loadData()
   }
 
@@ -363,7 +418,12 @@ export default function LedgerPage() {
                 label={f.display_label}
                 rules={buildRules(f)}
                 style={{ gridColumn: f.props?.col_span === 2 ? 'span 2' : 'span 1' }}
-                extra={f.data_type === 'image' ? '支持上传图片或常用文档（JPG/PNG/PDF/Word/Excel）' : f.props?.tips}
+                extra={editingFamily?.size > 1 && editing?.record?.householder === '是' &&
+                  (f.physical_field === 'household_no' || f.physical_field === 'householder') ? (
+                    <span style={{ color: '#ff4d4f' }}>
+                      该成员是户主，户下还有 {editingFamily.size - 1} 名成员。请先完成户主交接后再修改户属信息。
+                    </span>
+                  ) : (f.data_type === 'image' ? '支持上传图片或常用文档（JPG/PNG/PDF/Word/Excel）' : f.props?.tips)}
                 valuePropName={f.data_type === 'boolean' ? 'checked' : 'value'}
               >
                 {renderFormControl(f)}
@@ -443,6 +503,40 @@ export default function LedgerPage() {
               </>
             ) : (
               <div style={{ textAlign: 'center', padding: 20, color: '#389e0d' }}>当前台账无重复数据，数据状态良好</div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      <Modal title="户主交接引导" open={transferOpen} onCancel={() => setTransferOpen(false)} footer={null} width={520}>
+        {transferInfo && (
+          <div>
+            <Alert
+              type="warning"
+              showIcon
+              message={`该成员（${transferInfo.record?.name || ''}）是户主，家庭还有其他成员，无法直接删除。请先将一名家庭成员变更为户主，系统将解除其户主身份后，您才可删除。`}
+              style={{ marginBottom: 12 }}
+            />
+            {transferInfo.members?.length ? (
+              <Table
+                rowKey="id"
+                size="small"
+                dataSource={transferInfo.members}
+                pagination={false}
+                columns={[
+                  { title: '成员姓名', dataIndex: 'name', render: (v: any) => v || '-' },
+                  { title: '与户主关系', dataIndex: 'relation', render: (v: any) => v || '-' },
+                  {
+                    title: '操作',
+                    width: 110,
+                    render: (_: any, m: any) => (
+                      <Button type="link" size="small" onClick={() => doTransfer(m)}>设为户主</Button>
+                    ),
+                  },
+                ]}
+              />
+            ) : (
+              <div style={{ padding: 16, textAlign: 'center', color: '#8c8c8c' }}>该户暂无其他成员</div>
             )}
           </div>
         )}

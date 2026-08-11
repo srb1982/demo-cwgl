@@ -13,6 +13,7 @@ from ..config import ROLE_ADMIN, ROLE_MANAGER, ROLE_VIEWER, UPLOAD_DIR
 from ..database import get_db, query_all, query_one, execute, loads, dumps, ensure_column
 from ..services.audit import log_operation
 from ..services.sync import notify_data_changed
+from ..services import family
 
 router = APIRouter(prefix="/api/ledger", tags=["ledger"])
 
@@ -195,6 +196,62 @@ async def upload_image(file: UploadFile = File(...), user: dict = Depends(requir
     return {"url": f"/api/files/{name}"}
 
 
+@router.get("/{menu_code}/household-check")
+def household_check(menu_code: str, household_no: str = "", exclude_id: int = 0,
+                    user: dict = Depends(get_current_user)):
+    """查询户号下的家庭信息（成员、户主、户人数、是否单人户），供前端编辑/删除前校验与交接弹窗使用"""
+    if not family.is_family_menu(menu_code):
+        return {"enabled": False}
+    with get_db() as db:
+        members = family.family_members(db, household_no)
+    out = [{"id": m["id"], "name": m.get("name"), "relation": m.get("relation"),
+            "householder": m.get("householder")} for m in members
+           if not exclude_id or m["id"] != exclude_id]
+    holders = [m for m in out if m["householder"] == family.HOLDER]
+    return {
+        "enabled": True,
+        "household_no": household_no or None,
+        "size": len(members),
+        "is_single": len(members) == 1,
+        "holder": holders[0] if holders else None,
+        "members": out,
+    }
+
+
+class TransferHouseholderBody(BaseModel):
+    household_no: str
+    current_holder_id: int
+    new_holder_id: int
+
+
+@router.post("/{menu_code}/transfer-householder")
+async def transfer_householder(menu_code: str, body: TransferHouseholderBody,
+                               user: dict = Depends(require_roles(*WRITABLE)), request: Request = None):
+    """户主交接：仅互换户主标志位，家庭人数与隶属关系不变"""
+    if not family.is_family_menu(menu_code):
+        raise HTTPException(status_code=400, detail="该台账不支持户主交接")
+    m = _menu(menu_code)
+    with get_db() as db:
+        members = family.family_members(db, body.household_no)
+        cur = [x for x in members if x["id"] == body.current_holder_id]
+        nw = [x for x in members if x["id"] == body.new_holder_id]
+        if not cur or not nw:
+            raise HTTPException(status_code=400, detail="户主或新户主不在该户中")
+        if cur[0].get("householder") != family.HOLDER:
+            raise HTTPException(status_code=400, detail="当前成员不是户主，无需交接")
+        if body.current_holder_id == body.new_holder_id:
+            raise HTTPException(status_code=400, detail="户主不能交接给自己")
+        db.execute(f'UPDATE {m["table_name"]} SET householder=? WHERE id=?',
+                   (family.NOT_HOLDER, body.current_holder_id))
+        db.execute(f'UPDATE {m["table_name"]} SET householder=? WHERE id=?',
+                   (family.HOLDER, body.new_holder_id))
+    log_operation(user, "户主交接", f"台账-{m['name']}",
+                  f"户号{body.household_no} 户主交接 #{body.current_holder_id}->#{body.new_holder_id}",
+                  get_client_ip(request))
+    await notify_data_changed(menu_code)
+    return {"message": "户主交接成功"}
+
+
 @router.post("/{menu_code}")
 async def create_item(menu_code: str, item: dict, user: dict = Depends(require_roles(*WRITABLE)), request: Request = None):
     m = _menu(menu_code)
@@ -202,20 +259,25 @@ async def create_item(menu_code: str, item: dict, user: dict = Depends(require_r
     field_map = {f["physical_field"]: f for f in fields}
     item = _auto_fill(item, field_map)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cols, ph, vals = [], [], []
-    for f in fields:
-        pf = f["physical_field"]
-        if pf in item and item[pf] is not None:
-            cols.append(f'"{pf}"')
-            ph.append("?")
-            vals.append(item[pf])
-    cols += ["create_time", "update_time"]
-    ph += ["?", "?"]
-    vals += [now, now]
     with get_db() as db:
+        if family.is_family_menu(menu_code) and item.get("household_no") not in (None, ""):
+            if family.family_size(db, item["household_no"]) == 0 and "householder" not in item:
+                item["householder"] = family.HOLDER
+        cols, ph, vals = [], [], []
+        for f in fields:
+            pf = f["physical_field"]
+            if pf in item and item[pf] is not None:
+                cols.append(f'"{pf}"')
+                ph.append("?")
+                vals.append(item[pf])
+        cols += ["create_time", "update_time"]
+        ph += ["?", "?"]
+        vals += [now, now]
         cur = db.execute(
             f'INSERT INTO {m["table_name"]} ({", ".join(cols)}) VALUES ({", ".join(ph)})', vals)
         new_id = cur.lastrowid
+        if family.is_family_menu(menu_code):
+            family.sync_population(db, item.get("household_no"))
     log_operation(user, "新增数据", f"台账-{m['name']}", f"新增记录#{new_id}", get_client_ip(request))
     await notify_data_changed(menu_code)
     return {"message": "新增成功", "id": new_id}
@@ -226,19 +288,45 @@ async def update_item(menu_code: str, item_id: int, item: dict, user: dict = Dep
     m = _menu(menu_code)
     fields = _fields(menu_code)
     item = _auto_fill(item, {f["physical_field"]: f for f in fields})
-    sets, vals = [], []
-    for f in fields:
-        pf = f["physical_field"]
-        if pf in item:
-            sets.append(f'"{pf}" = ?')
-            vals.append(item[pf])
-    sets.append("update_time = ?")
-    vals.append(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    vals.append(item_id)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with get_db() as db:
+        old_row = db.execute(f'SELECT * FROM {m["table_name"]} WHERE id=?', (item_id,)).fetchone()
+        if not old_row:
+            raise HTTPException(status_code=404, detail="记录不存在")
+        old = dict(old_row)
+        family_active = family.is_family_menu(menu_code)
+        old_hno = old.get("household_no")
+        new_hno = item.get("household_no")
+        hno_changed = (str(new_hno) if new_hno is not None else "") != \
+                      (str(old_hno) if old_hno is not None else "")
+        old_holder = old.get("householder") == family.HOLDER
+        new_holder = item.get("householder") == family.HOLDER
+        if family_active and (hno_changed or (old_holder and not new_holder)):
+            ok, msg, _ = family.guard_householder_change(db, old)
+            if not ok:
+                raise HTTPException(status_code=400, detail=msg)
+        sets, vals = [], []
+        for f in fields:
+            pf = f["physical_field"]
+            if pf in item:
+                sets.append(f'"{pf}" = ?')
+                vals.append(item[pf])
+        sets.append("update_time = ?")
+        vals.append(now)
+        vals.append(item_id)
         cur = db.execute(f'UPDATE {m["table_name"]} SET {", ".join(sets)} WHERE id=?', vals)
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="记录不存在")
+        if family_active:
+            if new_holder:
+                eff_hno = new_hno if new_hno is not None else old_hno
+                for mb in family.family_members(db, eff_hno):
+                    if mb["id"] != item_id and mb.get("householder") == family.HOLDER:
+                        db.execute(f'UPDATE {m["table_name"]} SET householder=? WHERE id=?',
+                                   (family.NOT_HOLDER, mb["id"]))
+            if hno_changed:
+                family.sync_population(db, old_hno)
+            family.sync_population(db, new_hno)
     log_operation(user, "修改数据", f"台账-{m['name']}", f"修改记录#{item_id}", get_client_ip(request))
     await notify_data_changed(menu_code)
     return {"message": "修改成功"}
@@ -248,9 +336,19 @@ async def update_item(menu_code: str, item_id: int, item: dict, user: dict = Dep
 async def delete_item(menu_code: str, item_id: int, user: dict = Depends(require_roles(*WRITABLE)), request: Request = None):
     m = _menu(menu_code)
     with get_db() as db:
+        old_row = db.execute(f'SELECT * FROM {m["table_name"]} WHERE id=?', (item_id,)).fetchone()
+        if not old_row:
+            raise HTTPException(status_code=404, detail="记录不存在")
+        old = dict(old_row)
+        if family.is_family_menu(menu_code):
+            ok, msg, _ = family.guard_householder_change(db, old)
+            if not ok:
+                raise HTTPException(status_code=400, detail=msg)
         cur = db.execute(f"DELETE FROM {m['table_name']} WHERE id=?", (item_id,))
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="记录不存在")
+        if family.is_family_menu(menu_code):
+            family.sync_population(db, old.get("household_no"))
     log_operation(user, "删除数据", f"台账-{m['name']}", f"删除记录#{item_id}", get_client_ip(request))
     await notify_data_changed(menu_code)
     return {"message": "删除成功"}
