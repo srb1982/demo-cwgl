@@ -42,6 +42,16 @@ describe('buildRules（字段校验规则构建）', () => {
     expect(rules).toContainEqual({ max: 10, message: '最多输入 10 个字符' })
   })
 
+  it('props 不含 max_length 时不生成 max 规则', () => {
+    const rules = buildRules({ ...f, props: { default_value: 'x' } })
+    expect(rules.find((r) => r.max)).toBeUndefined()
+  })
+
+  it('props 缺失时按空对象处理', () => {
+    const rules = buildRules({ ...f })
+    expect(rules.length).toBe(0)
+  })
+
   it('格式校验生成 pattern 规则', () => {
     const rules = buildRules({ ...f, props: { format_type: 'phone' } })
     const rule = rules.find((r) => r.pattern)

@@ -28,6 +28,14 @@ describe('extractFileName 附件名提取', () => {
   it('空路径回退为附件', () => {
     expect(extractFileName('')).toBe('附件')
   })
+
+  it('非法编码回退为原始文件名', () => {
+    expect(extractFileName('/uploads/%E6%95%E6%95%99.docx')).toBe('%E6%95%E6%95%99.docx')
+  })
+
+  it('非法编码且末段为空时回退为附件', () => {
+    expect(extractFileName('/uploads/%E6%95%E6%95%99/')).toBe('附件')
+  })
 })
 
 describe('formatNumber 数字格式化', () => {

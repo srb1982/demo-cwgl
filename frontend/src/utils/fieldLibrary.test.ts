@@ -40,6 +40,16 @@ describe('filterLibrary 字段库过滤', () => {
   it('空列表返回空', () => {
     expect(filterLibrary([], { keyword: 'x' })).toEqual([])
   })
+
+  it('条目缺 label/name 时按其它条件过滤', () => {
+    const out = filterLibrary([{ category: 'villager', data_type: 'text' }], { keyword: 'x' })
+    expect(out.length).toBe(0)
+  })
+
+  it('空关键词与无关键词行为一致', () => {
+    expect(filterLibrary(lib, { keyword: '' }).length).toBe(4)
+    expect(filterLibrary(lib, { category: 'villager', keyword: '' }).length).toBe(2)
+  })
 })
 
 describe('moveItem 字段排序移动', () => {

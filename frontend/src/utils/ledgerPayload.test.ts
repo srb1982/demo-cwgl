@@ -60,6 +60,11 @@ describe('buildFormValues 编辑回填构造', () => {
     expect(values.score).toBeUndefined()
   })
 
+  it('date 字段空字符串回填为 undefined', () => {
+    const values = buildFormValues(fields, { birth_date: '' })
+    expect(values.birth_date).toBeUndefined()
+  })
+
   it('普通字段原样保留', () => {
     const values = buildFormValues(fields, { name: '张三', score: 88 })
     expect(values.name).toBe('张三')

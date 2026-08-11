@@ -84,4 +84,14 @@ describe('computeExpandedKeys 菜单搜索展开', () => {
     const keys = computeExpandedKeys(menus, 'system')
     expect(keys).toEqual(['system'])
   })
+
+  it('命中的父节点不存在时安全忽略', () => {
+    const keys = computeExpandedKeys([{ name: '孤儿', code: 'child', parent_code: 'ghost' }], '孤儿')
+    expect(keys).toEqual(['child'])
+  })
+
+  it('菜单缺 name 或 code 时仍可按另一项命中', () => {
+    expect(computeExpandedKeys([{ name: '', code: 'a', parent_code: 'p' }], 'a')).toEqual(['a'])
+    expect(computeExpandedKeys([{ name: '空白编码', code: '' }], '空白编码')).toEqual([''])
+  })
 })
