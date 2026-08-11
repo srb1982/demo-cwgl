@@ -3,6 +3,10 @@ dist/
 .vite/
 __pycache__/
 *.pyc
+.coverage
+.coverage.*
+htmlcov/
+frontend/coverage/
 backend/data/*.db
 backend/data/*.db-wal
 backend/data/*.db-shm
