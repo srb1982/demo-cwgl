@@ -509,6 +509,8 @@ MENUS = [
     {"code": "sys_log", "name": "操作日志", "parent": "system", "sort": 4, "is_ledger": 0, "table": None, "path": "/system/logs"},
     {"code": "sys_backup", "name": "数据备份恢复", "parent": "system", "sort": 5, "is_ledger": 0, "table": None, "path": "/system/backup"},
     {"code": "sys_config", "name": "系统参数配置", "parent": "system", "sort": 6, "is_ledger": 0, "table": None, "path": "/system/config"},
+    {"code": "sys_lan", "name": "局域网设置", "parent": "system", "sort": 7, "is_ledger": 0, "table": None, "path": "/system/lan"},
+    {"code": "sys_mask", "name": "脱敏设置", "parent": "system", "sort": 8, "is_ledger": 0, "table": None, "path": "/system/mask"},
 ]
 
 FIELD_LIBRARY = [
@@ -766,6 +768,11 @@ def init_db():
         ("visit_warn_days", "30", "走访超期预警天数"),
         ("public_warn_days", "3", "公示到期提前提醒天数"),
         ("system_title", "智慧乡村村务综合管理系统", "系统标题"),
+        ("lan_enabled", "1", "是否允许局域网访问（1允许/0关闭）"),
+        ("server_port", "8000", "系统服务端口"),
+        ("mask_enabled", "1", "敏感信息列表脱敏开关"),
+        ("mask_fields", '["id_card","phone","visa_no","guardian_phone","responsible_phone","parent_phone","emergency_phone","helper_phone"]', "脱敏字段列表"),
+        ("mask_rules", '{"id_card":{"head":4,"tail":4,"min_len":15},"phone":{"head":3,"tail":4,"min_len":11},"visa_no":{"head":2,"tail":2,"min_len":5}}', "脱敏保留位数规则"),
     ]
     for key, val, remark in defaults:
         cur.execute("SELECT COUNT(*) c FROM sys_config WHERE config_key=?", (key,))

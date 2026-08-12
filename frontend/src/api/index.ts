@@ -79,6 +79,7 @@ export const getOperLogs = (params: any) => request.get('/system/logs', { params
 export const archiveYear = (year: string) => request.post('/system/archive-year', { year })
 export const getSysConfig = () => request.get('/system/config')
 export const setSysConfig = (key: string, value: string) => request.put('/system/config', { key, value })
+export const getLanInfo = () => request.get('/system/lan')
 export const getScreenConfig = () => request.get('/system/screen-config')
 export const saveScreenConfig = (config: any) => request.put('/system/screen-config', { config })
 

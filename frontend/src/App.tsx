@@ -13,6 +13,8 @@ import FieldsPage from './pages/system/FieldsPage'
 import LogsPage from './pages/system/LogsPage'
 import BackupPage from './pages/system/BackupPage'
 import ConfigPage from './pages/system/ConfigPage'
+import LanPage from './pages/system/LanPage'
+import MaskPage from './pages/system/MaskPage'
 import { connectSocket } from './socket'
 
 function ProtectedRoute({ children }: { children: JSX.Element }) {
@@ -51,6 +53,8 @@ function AppRoutes() {
           <Route path="system/logs" element={<LogsPage />} />
           <Route path="system/backup" element={<BackupPage />} />
           <Route path="system/config" element={<ConfigPage />} />
+          <Route path="system/lan" element={<LanPage />} />
+          <Route path="system/mask" element={<MaskPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

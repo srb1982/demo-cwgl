@@ -8,17 +8,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
-from ..auth import get_current_user, require_roles, apply_mask, mask_value, get_client_ip
+from ..auth import get_current_user, require_roles, get_client_ip
 from ..config import ROLE_ADMIN, ROLE_MANAGER, ROLE_VIEWER, UPLOAD_DIR
 from ..database import get_db, query_all, query_one, execute, loads, dumps, ensure_column
 from ..services.audit import log_operation
 from ..services.sync import notify_data_changed
 from ..services import family
+from ..services.mask import get_mask_config, apply_mask_cfg, mask_value_cfg
 
 router = APIRouter(prefix="/api/ledger", tags=["ledger"])
-
-SENSITIVE_FIELDS = {"id_card", "phone", "visa_no", "guardian_phone", "responsible_phone",
-                    "parent_phone", "emergency_phone", "helper_phone"}
 
 WRITABLE = [ROLE_ADMIN, ROLE_MANAGER]
 
@@ -162,7 +160,7 @@ def list_data(menu_code: str, page: int = 1, size: int = 10, keyword: str = "",
     list_fields = [f for f in fields if f["show_in_list"]]
     col_names = ["id"] + [f["physical_field"] for f in list_fields]
     data = [{k: r[k] for k in col_names if k in r} for r in rows]
-    masked = apply_mask(data, [f["physical_field"] for f in list_fields])
+    masked = apply_mask_cfg(data, [f["physical_field"] for f in list_fields])
     return {"total": total, "page": page, "size": size, "list": masked,
             "list_fields": list_fields}
 
@@ -176,9 +174,13 @@ def item_detail(menu_code: str, item_id: int, user: dict = Depends(get_current_u
     fields = _fields(menu_code)
     data = dict(row)
     if user["role"] == ROLE_VIEWER:
-        for f in fields:
-            if f["physical_field"] in SENSITIVE_FIELDS:
-                data[f["physical_field"]] = mask_value(f["physical_field"], data.get(f["physical_field"]))
+        cfg = get_mask_config()
+        if cfg.get("enabled"):
+            mask_fields = set(cfg.get("fields") or [])
+            for f in fields:
+                if f["physical_field"] in mask_fields:
+                    data[f["physical_field"]] = mask_value_cfg(
+                        f["physical_field"], data.get(f["physical_field"]), cfg.get("rules"))
     return {"item": data, "fields": fields}
 
 

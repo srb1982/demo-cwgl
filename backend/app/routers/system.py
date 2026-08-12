@@ -87,6 +87,34 @@ async def set_config(body: ConfigBody, user: dict = Depends(require_roles(ROLE_A
     return {"message": "配置已保存"}
 
 
+# ---------------- 局域网设置 ----------------
+@router.get("/lan")
+async def lan_info(user: dict = Depends(require_roles(ROLE_ADMIN))):
+    import socket
+    ips = []
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ips.append(s.getsockname()[0])
+        s.close()
+    except Exception:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith("127.") and ip not in ips:
+                ips.append(ip)
+    except Exception:
+        pass
+    row = query_one("SELECT config_value FROM sys_config WHERE config_key='lan_enabled'")
+    port_row = query_one("SELECT config_value FROM sys_config WHERE config_key='server_port'")
+    return {
+        "ips": ips or ["127.0.0.1"],
+        "port": (port_row or {}).get("config_value") or "8000",
+        "lan_enabled": (row or {}).get("config_value", "1") not in ("0", ""),
+    }
+
+
 # ---------------- 年度数据封存 ----------------
 class ArchiveYearBody(BaseModel):
     year: str
