@@ -300,7 +300,14 @@ async def update_item(menu_code: str, item_id: int, item: dict, user: dict = Dep
         hno_changed = (str(new_hno) if new_hno is not None else "") != \
                       (str(old_hno) if old_hno is not None else "")
         old_holder = old.get("householder") == family.HOLDER
-        new_holder = item.get("householder") == family.HOLDER
+        # 单人户户主迁入已有户主的户时自动降级为普通成员（需求3.2：并入后失去户主身份）
+        holder_value = item.get("householder")
+        if family_active and hno_changed and old_holder and holder_value == family.HOLDER:
+            eff_holders = [mb for mb in family.family_members(db, new_hno)
+                           if mb["id"] != item_id and mb.get("householder") == family.HOLDER]
+            if eff_holders:
+                holder_value = family.NOT_HOLDER
+        new_holder = holder_value == family.HOLDER
         if family_active and (hno_changed or (old_holder and not new_holder)):
             ok, msg, _ = family.guard_householder_change(db, old)
             if not ok:
@@ -309,8 +316,11 @@ async def update_item(menu_code: str, item_id: int, item: dict, user: dict = Dep
         for f in fields:
             pf = f["physical_field"]
             if pf in item:
+                v = item[pf]
+                if pf == "householder" and holder_value is not None:
+                    v = holder_value
                 sets.append(f'"{pf}" = ?')
-                vals.append(item[pf])
+                vals.append(v)
         sets.append("update_time = ?")
         vals.append(now)
         vals.append(item_id)

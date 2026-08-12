@@ -125,6 +125,27 @@ class TestFamilyEdit:
         assert row_a["population"] == 3
         assert _detail(client, manager_h, b)["population"] == 3
 
+    def test_single_holder_merge_keeps_target_holder(self, client, manager_h):
+        h1, h2 = H_NO(), H_NO()
+        a = _create(client, manager_h, "独户主并入", h1)
+        b = _create(client, manager_h, "目标户主", h2)
+        _create(client, manager_h, "目标成员", h2, householder="否")
+        r = _update(client, manager_h, a, household_no=h2, householder="是")
+        assert r.status_code == 200, r.text
+        assert _detail(client, manager_h, a)["householder"] == "否"
+        assert _detail(client, manager_h, b)["householder"] == "是"
+        assert _detail(client, manager_h, a)["population"] == 3
+        assert _detail(client, manager_h, b)["population"] == 3
+
+    def test_single_holder_move_to_empty_household_stays_holder(self, client, manager_h):
+        h1, h2 = H_NO(), H_NO()
+        a = _create(client, manager_h, "独户主迁新", h1)
+        r = _update(client, manager_h, a, household_no=h2, householder="是")
+        assert r.status_code == 200, r.text
+        row = _detail(client, manager_h, a)
+        assert row["householder"] == "是"
+        assert row["population"] == 1
+
     def test_regular_member_promote_demotes_old_holder(self, client, manager_h):
         h1 = H_NO()
         a = _create(client, manager_h, "原户主", h1)
