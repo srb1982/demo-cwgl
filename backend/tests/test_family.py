@@ -80,6 +80,14 @@ class TestFamilyAutoInduce:
         assert row_b["population"] == 2
         assert _detail(client, manager_h, a)["population"] == 2
 
+    def test_join_existing_family_explicit_holder_demotes_old(self, client, manager_h):
+        hno = H_NO()
+        a = _create(client, manager_h, "原户主", hno)
+        b = _create(client, manager_h, "新户主", hno, householder="是")
+        assert _detail(client, manager_h, a)["householder"] == "否"
+        assert _detail(client, manager_h, b)["householder"] == "是"
+        assert _detail(client, manager_h, b)["population"] == 2
+
 
 class TestFamilyEdit:
     """编辑：变更户属关系"""

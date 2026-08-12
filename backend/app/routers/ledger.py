@@ -277,6 +277,11 @@ async def create_item(menu_code: str, item: dict, user: dict = Depends(require_r
             f'INSERT INTO {m["table_name"]} ({", ".join(cols)}) VALUES ({", ".join(ph)})', vals)
         new_id = cur.lastrowid
         if family.is_family_menu(menu_code):
+            if item.get("householder") == family.HOLDER:
+                for mb in family.family_members(db, item.get("household_no")):
+                    if mb["id"] != new_id and mb.get("householder") == family.HOLDER:
+                        db.execute(f'UPDATE {m["table_name"]} SET householder=? WHERE id=?',
+                                   (family.NOT_HOLDER, mb["id"]))
             family.sync_population(db, item.get("household_no"))
     log_operation(user, "新增数据", f"台账-{m['name']}", f"新增记录#{new_id}", get_client_ip(request))
     await notify_data_changed(menu_code)
