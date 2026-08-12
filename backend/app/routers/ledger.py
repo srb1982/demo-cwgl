@@ -416,6 +416,7 @@ async def import_excel(menu_code: str, file: UploadFile = File(...),
         raise HTTPException(status_code=400, detail="表头无法匹配台账字段，请检查列名")
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ok, dup = 0, 0
+    touched_hno = set()
     with get_db() as db:
         for row in rows[1:]:
             if all(c is None for c in row):
@@ -423,6 +424,9 @@ async def import_excel(menu_code: str, file: UploadFile = File(...),
             rec = {}
             for i, pf in col_map:
                 rec[pf] = row[i]
+            hno = rec.get("household_no")
+            if family.is_family_menu(menu_code) and hno not in (None, ""):
+                touched_hno.add(str(hno))
             cols, ph, vals = [], [], []
             for pf, v in rec.items():
                 cols.append(f'"{pf}"')
@@ -442,6 +446,8 @@ async def import_excel(menu_code: str, file: UploadFile = File(...),
                 ok += 1
             except Exception:
                 continue
+        for hno in touched_hno:
+            family.sync_population(db, hno)
     log_operation(user, "导入数据", f"台账-{m['name']}", f"Excel导入 成功{ok}条 重复{dup}条", get_client_ip(request))
     await notify_data_changed(menu_code)
     return {"message": f"导入完成：成功 {ok} 条，身份证重复跳过 {dup} 条"}

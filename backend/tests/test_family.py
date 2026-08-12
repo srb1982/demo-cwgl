@@ -1,6 +1,8 @@
+import io
 import uuid
 
 import pytest
+from openpyxl import Workbook
 
 H_NO = lambda: f"TH{uuid.uuid4().hex[:8].upper()}"  # noqa: E731
 
@@ -30,6 +32,26 @@ def _update(client, headers, item_id, **fields):
 
 def _delete(client, headers, item_id):
     return client.delete(f"/api/ledger/villager/{item_id}", headers=headers)
+
+
+def _xlsx(headers, rows):
+    wb = Workbook()
+    ws = wb.active
+    ws.append(headers)
+    for row in rows:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _import(client, headers, rows):
+    data = _xlsx(["姓名", "户号", "户主"], rows)
+    r = client.post("/api/ledger/villager/import", headers=headers,
+                    files={"file": ("导入.xlsx", data,
+                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+    assert r.status_code == 200, r.text
+    return r.json()
 
 
 class TestFamilyAutoInduce:
@@ -233,6 +255,42 @@ class TestHouseholdCheck:
         data = r.json()
         assert data["is_single"] is True
         assert data["size"] == 1
+
+
+class TestFamilyImport:
+    """批量导入：人口数联动"""
+
+    def _by_name(self, client, headers, name):
+        r = client.get("/api/ledger/villager", params={"keyword": name}, headers=headers)
+        assert r.status_code == 200, r.text
+        for it in r.json()["list"]:
+            if it.get("name") == name:
+                return it
+        return None
+
+    def test_import_same_household_recalc(self, client, manager_h):
+        hno = H_NO()
+        names = [f"导入户A{uuid.uuid4().hex[:4]}", f"导入户B{uuid.uuid4().hex[:4]}"]
+        _import(client, manager_h, [[names[0], hno, "是"], [names[1], hno, "否"]])
+        for n in names:
+            row = self._by_name(client, manager_h, n)
+            assert row is not None
+            assert row["population"] == 2
+
+    def test_import_new_household_single(self, client, manager_h):
+        hno = H_NO()
+        n = f"导入独户{uuid.uuid4().hex[:4]}"
+        _import(client, manager_h, [[n, hno, "是"]])
+        row = self._by_name(client, manager_h, n)
+        assert row["population"] == 1
+
+    def test_import_extends_existing_family(self, client, manager_h):
+        hno = H_NO()
+        a = _create(client, manager_h, "原住甲", hno)
+        n = f"导入新成员{uuid.uuid4().hex[:4]}"
+        _import(client, manager_h, [[n, hno, "否"]])
+        assert _detail(client, manager_h, a)["population"] == 2
+        assert self._by_name(client, manager_h, n)["population"] == 2
 
 
 class TestOtherLedgersUnaffected:
