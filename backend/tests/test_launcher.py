@@ -1,3 +1,4 @@
+import os
 import socket
 import subprocess
 import threading
@@ -263,3 +264,58 @@ class TestLauncherAPI:
     def test_enable_lan_rejected_when_idle(self, client, admin_h):
         r = client.post("/api/system/launcher/enable-lan", headers=admin_h)
         assert r.status_code == 400
+
+
+# ---------------------------------------------------------------- 补充场景
+class TestLauncherExtra:
+    def test_pid_file_lifecycle(self, client, admin_h, tmp_path):
+        pid_file = str(tmp_path / "demo.pid")
+        r = client.put("/api/system/launcher/config", headers=admin_h, json={
+            "app_name": "x", "start_command": DEFAULT_LAUNCHER_CONFIG["start_command"],
+            "health_path": "/", "start_port": 19700, "max_retries": 10, "pid_file": pid_file,
+        })
+        assert r.status_code == 200
+        r = client.post("/api/system/launcher/start", headers=admin_h)
+        assert r.status_code == 200, r.text
+        assert os.path.exists(pid_file)
+        r = client.post("/api/system/launcher/stop", headers=admin_h)
+        assert r.status_code == 200
+        assert not os.path.exists(pid_file)
+
+    def test_stale_pid_cleaned_on_start(self, client, admin_h, tmp_path, monkeypatch):
+        pid_file = str(tmp_path / "demo.pid")
+        with open(pid_file, "w") as f:
+            f.write("999999")
+        killed = []
+        monkeypatch.setattr(launcher.os, "kill", lambda pid, sig: killed.append(pid))
+        client.put("/api/system/launcher/config", headers=admin_h, json={
+            "app_name": "x", "start_command": DEFAULT_LAUNCHER_CONFIG["start_command"],
+            "health_path": "/", "start_port": 19710, "max_retries": 10, "pid_file": pid_file,
+        })
+        r = client.post("/api/system/launcher/start", headers=admin_h)
+        assert r.status_code == 200, r.text
+        assert 999999 in killed
+        client.post("/api/system/launcher/stop", headers=admin_h)
+
+    def test_netsh_firewall_on_windows(self, monkeypatch):
+        monkeypatch.setattr(launcher.os, "name", "nt")
+        calls = []
+
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="Ok", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        logs = []
+        assert ensure_firewall(19800, True, logs.append) is True
+        add_cmd = " ".join(calls[0])
+        assert "netsh" in add_cmd and "19800" in add_cmd and "add" in add_cmd
+        calls.clear()
+        ensure_firewall(19800, False, logs.append)
+        del_cmd = " ".join(calls[0])
+        assert "netsh" in del_cmd and "delete" in del_cmd
+
+    def test_netcards_has_entries(self, client, admin_h):
+        r = client.get("/api/system/launcher/netcards", headers=admin_h)
+        cards = r.json()["netcards"]
+        assert isinstance(cards, list) and any(c["ip"] for c in cards)
