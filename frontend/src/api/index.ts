@@ -83,6 +83,15 @@ export const getLanInfo = () => request.get('/system/lan')
 export const getScreenConfig = () => request.get('/system/screen-config')
 export const saveScreenConfig = (config: any) => request.put('/system/screen-config', { config })
 
+export const getLauncherStatus = () => request.get('/system/launcher/status')
+export const launcherStart = () => request.post('/system/launcher/start')
+export const launcherEnableLan = () => request.post('/system/launcher/enable-lan')
+export const launcherStop = () => request.post('/system/launcher/stop')
+export const getLauncherLogs = (lines = 200) => request.get('/system/launcher/logs', { params: { lines } })
+export const getLauncherConfig = () => request.get('/system/launcher/config')
+export const saveLauncherConfig = (config: any) => request.put('/system/launcher/config', config)
+export const getNetcards = () => request.get('/system/launcher/netcards')
+
 export const downloadFile = (url: string, name?: string) => {
   const a = document.createElement('a')
   a.href = url
