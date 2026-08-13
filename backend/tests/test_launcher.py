@@ -333,3 +333,34 @@ class TestLauncherExtra:
         proc.start()
         assert "preexec_fn" in captured["kwargs"]
         assert captured["kwargs"]["start_new_session"] is True
+
+    def test_get_occupier_via_psutil(self, monkeypatch):
+        import sys
+        class FakeConn:
+            laddr = type("L", (), {"port": 19500})()
+            pid = 7777
+        class FakeProcess:
+            def name(self):
+                return "demo-proc"
+        class FakePSUtil:
+            @staticmethod
+            def net_connections(kind="inet"):
+                return [FakeConn()]
+            @staticmethod
+            def Process(pid):
+                return FakeProcess()
+        monkeypatch.setitem(sys.modules, "psutil", FakePSUtil())
+        assert _get_occupier(19500) == (7777, "demo-proc")
+
+    def test_get_netcards_via_psutil(self, monkeypatch):
+        import sys
+        class FakeAddr:
+            family = socket.AF_INET
+            address = "192.168.50.10"
+        class FakePSUtil:
+            @staticmethod
+            def net_if_addrs():
+                return {"eth0": [FakeAddr()]}
+        monkeypatch.setitem(sys.modules, "psutil", FakePSUtil())
+        cards = launcher.get_netcards()
+        assert any(c["ip"] == "192.168.50.10" and c["name"] == "eth0" for c in cards)
