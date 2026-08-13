@@ -773,6 +773,7 @@ def init_db():
         ("mask_enabled", "1", "敏感信息列表脱敏开关"),
         ("mask_fields", '["id_card","phone","visa_no","guardian_phone","responsible_phone","parent_phone","emergency_phone","helper_phone"]', "脱敏字段列表"),
         ("mask_rules", '{"id_card":{"head":4,"tail":4,"min_len":15},"phone":{"head":3,"tail":4,"min_len":11},"visa_no":{"head":2,"tail":2,"min_len":5}}', "脱敏保留位数规则"),
+        ("launcher_config", '{"app_name":"示例服务","start_command":"python3 -m http.server {PORT} --bind {HOST}","health_path":"/","start_port":9000,"max_retries":10,"pid_file":""}', "通用局域网访问服务配置"),
     ]
     for key, val, remark in defaults:
         cur.execute("SELECT COUNT(*) c FROM sys_config WHERE config_key=?", (key,))

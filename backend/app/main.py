@@ -8,7 +8,7 @@ from socketio import ASGIApp
 from . import config
 from .seed import init_db
 from .routers import (
-    auth, users, menus, fields, ledger, archive, files, warning, fee, dashboard, system
+    auth, users, menus, fields, ledger, archive, files, warning, fee, dashboard, system, launcher
 )
 from .services.sync import sio
 from .scheduler import init_scheduler
@@ -36,6 +36,7 @@ app.include_router(warning.router)
 app.include_router(fee.router)
 app.include_router(dashboard.router)
 app.include_router(system.router)
+app.include_router(launcher.router)
 
 
 @app.get("/api/health")
