@@ -319,3 +319,17 @@ class TestLauncherExtra:
         r = client.get("/api/system/launcher/netcards", headers=admin_h)
         cards = r.json()["netcards"]
         assert isinstance(cards, list) and any(c["ip"] for c in cards)
+
+    def test_child_process_set_pdeathsig(self, monkeypatch):
+        captured = {}
+        real_popen = subprocess.Popen
+
+        def fake_popen(*args, **kwargs):
+            captured["kwargs"] = kwargs
+            return real_popen(["true"])
+
+        monkeypatch.setattr(subprocess, "Popen", fake_popen)
+        proc = launcher.ManagedProcess(["echo", "hi"], lambda x: None)
+        proc.start()
+        assert "preexec_fn" in captured["kwargs"]
+        assert captured["kwargs"]["start_new_session"] is True

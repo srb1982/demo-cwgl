@@ -191,8 +191,17 @@ def get_netcards():
 
 
 # ---------------------------------------------------------------- 进程管理
+def _set_pdeathsig():
+    """Linux 下让子进程在父进程（本控制台）死亡时自动收到 SIGTERM，防止僵尸残留"""
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+    except Exception:
+        pass
+
+
 class ManagedProcess:
-    """管理子进程：进程树清理 + 日志环形收集"""
+    """管理子进程：进程树清理 + 父进程死亡自动回收 + 日志环形收集"""
 
     def __init__(self, args, log):
         self.args = args
@@ -200,9 +209,12 @@ class ManagedProcess:
         self._log = log
 
     def start(self):
+        kwargs = {}
+        if os.name != "nt":
+            kwargs["preexec_fn"] = _set_pdeathsig
         self.proc = subprocess.Popen(
             self.args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, start_new_session=True,
+            text=True, start_new_session=True, **kwargs,
         )
         threading.Thread(target=self._drain, daemon=True).start()
 
