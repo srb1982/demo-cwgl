@@ -80,25 +80,24 @@ export default function LanPage() {
   useEffect(() => { loadSysLan() }, [loadSysLan])
   useEffect(() => { loadLauncher() }, [loadLauncher])
 
-  // 运行时轮询状态与日志
+  // 轮询状态与日志（IDLE 时也保留历史日志）
   useEffect(() => {
-    if (state === 'IDLE') {
-      setLogTail([])
-      return
-    }
-    const timer = setInterval(async () => {
+    let alive = true
+    const tick = async () => {
       try {
-        const [st]: any = await Promise.all([
+        const [st, lg]: any = await Promise.all([
           getLauncherStatus(), getLauncherLogs(300),
         ])
+        if (!alive) return
         setState(st.state)
         setRunPort(st.port)
-        const lg: any = await getLauncherLogs(300)
         setLogs(lg.logs || [])
       } catch { /* 忽略 */ }
-    }, 2000)
-    return () => clearInterval(timer)
-  }, [state])
+    }
+    tick()
+    const timer = setInterval(tick, 2000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [])
 
   useEffect(() => {
     const last = logs.slice(-200)
