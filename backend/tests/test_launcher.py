@@ -364,3 +364,35 @@ class TestLauncherExtra:
         monkeypatch.setitem(sys.modules, "psutil", FakePSUtil())
         cards = launcher.get_netcards()
         assert any(c["ip"] == "192.168.50.10" and c["name"] == "eth0" for c in cards)
+
+    def test_start_failure_rolls_back_to_idle(self, client, admin_h, monkeypatch):
+        port = 19720
+        client.put("/api/system/launcher/config", headers=admin_h, json={
+            "app_name": "x", "start_command": DEFAULT_LAUNCHER_CONFIG["start_command"],
+            "health_path": "/", "start_port": port, "max_retries": 5, "pid_file": "",
+        })
+        monkeypatch.setattr(launcher.LauncherEngine, "_wait_health",
+                            lambda self, port, path, timeout=10: False)
+        r = client.post("/api/system/launcher/start", headers=admin_h)
+        assert r.status_code == 400
+        st = client.get("/api/system/launcher/status", headers=admin_h).json()
+        assert st["state"] == IDLE
+        assert st["error"]
+        assert "健康检查" in st["error"]
+
+    def test_enable_lan_failure_rolls_back_to_idle(self, client, admin_h, monkeypatch):
+        port = 19730
+        client.put("/api/system/launcher/config", headers=admin_h, json={
+            "app_name": "x", "start_command": DEFAULT_LAUNCHER_CONFIG["start_command"],
+            "health_path": "/", "start_port": port, "max_retries": 5, "pid_file": "",
+        })
+        r = client.post("/api/system/launcher/start", headers=admin_h)
+        assert r.status_code == 200, r.text
+        assert r.json()["state"] == RUNNING_LOCAL
+        monkeypatch.setattr(launcher.LauncherEngine, "_wait_health",
+                            lambda self, port, path, timeout=10: False)
+        r = client.post("/api/system/launcher/enable-lan", headers=admin_h)
+        assert r.status_code == 400
+        st = client.get("/api/system/launcher/status", headers=admin_h).json()
+        assert st["state"] == IDLE
+        assert st["error"]
